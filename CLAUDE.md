@@ -1,0 +1,135 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this project is
+
+eneBridge is a Windows desktop rebuild of a lost-source .NET console app. The original app is a
+data bridge for **EMAS**, a legacy Malaysian accounting system: it reads transaction data out of an
+Excel workbook and writes it into two DBF files (`icmaste.dbf`, `ictrane.dbf`) that EMAS's
+Inventory Control module imports. `icmaste` is the one-row-per-document master table (151 columns);
+`ictrane` is the many-rows-per-document transaction detail table (80 columns).
+
+The original console app's source was gone; its behavior was fully reverse-engineered from an
+`ildasm` disassembly of the compiled DLL (the PDB preserved method/variable names) and validated
+against the real sample workbook in `reference/data.xlsx`. This rebuild is a WPF GUI with the same
+core pipeline plus quality-of-life features (path pickers, data preview, run history, real error
+reporting instead of the original's silent failures/crashes).
+
+- `reference/` — the original compiled build (`eneBridge.exe`/`.dll`/`.pdb`) kept only as a
+  comparison baseline, and `data.xlsx`, the real sample workbook used throughout as the test
+  fixture (also copied into `tests/eneBridge.Wpf.Core.Tests/Fixtures/`).
+- `prerequisites/` — installers required on any machine running the app: the Access Database
+  Engine (OleDb DBF/Excel provider) and the .NET 8 Desktop Runtime.
+
+## Commands
+
+```
+# Build everything
+dotnet build "src/eneBridge.Wpf.slnx"
+
+# Run all tests (47 tests; requires the Access Database Engine OleDb provider to be
+# installed/registered on the machine, since several tests round-trip through real .dbf files)
+dotnet test "tests/eneBridge.Wpf.Core.Tests/eneBridge.Wpf.Core.Tests.csproj"
+
+# Run a single test
+dotnet test "tests/eneBridge.Wpf.Core.Tests/eneBridge.Wpf.Core.Tests.csproj" --filter "FullyQualifiedName~ReadIcmaste_DedupesByRef_OneRowPerDocument"
+
+# Run the app
+dotnet run --project "src/eneBridge.Wpf/eneBridge.Wpf.csproj"
+```
+
+Both `eneBridge.Wpf.Core` and the WPF app target `net8.0-windows` (Core is windows-targeted too,
+since `System.Data.OleDb` is Windows-only and this app has no cross-platform use case).
+
+## Architecture
+
+**Two-project split**: `src/eneBridge.Wpf.Core` (schema/mapping/export logic, no WPF dependency,
+independently testable) and `src/eneBridge.Wpf` (MVVM UI, thin — orchestration only). No DI
+container; `App.xaml.cs OnStartup` is the composition root that constructs services by hand and
+passes them into `MainViewModel`.
+
+**Data model is `DataTable`-based, not POCOs** (`Models/IcmasteSchema.cs`, `Models/IctraneSchema.cs`).
+With 151/80 mechanical columns, a `DataTable`'s `DataColumnCollection` is already the natural input
+the CREATE TABLE/INSERT SQL generators need, and it binds directly to the WPF preview `DataGrid`
+with no extra glue. Column names actually touched by mapping code are exposed as `const string`
+members on the schema classes (e.g. `IcmasteSchema.Ref`) so mapping code never uses raw string
+literals for column names — the full column order/type list must stay byte-for-byte exact, since
+that's what the downstream EMAS import expects.
+
+**Excel reading** (`Services/ExcelReaderService.cs`) uses ClosedXML, reading explicit physical
+row/column positions rather than treating the workbook like a database table (which is what the
+original OleDb-based app did, and which silently assumed physical row 1 was a header). The
+row-skip offset is centralized in `Models/ExcelColumnMap.cs`'s `ExcelLayout` (first row actually
+processed = physical row 6), and the raw Excel column indices used by each field are centralized
+in `IcmasteExcelCol`/`IctraneExcelCol` in the same file — these are the single source of truth for
+"col[N]" mapping rules, reverse-engineered from the original IL and confirmed against
+`reference/data.xlsx`.
+
+Row validation differs deliberately between the two tables:
+- `icmaste`: skips rows with a blank REF/DATE/CODE/NAME, and **dedupes by REF** — correct here
+  because REF is a document number and icmaste is one-row-per-document.
+- `ictrane`: skips rows with blank required fields but does **not** dedupe by REF — REF legitimately
+  repeats across many transaction lines per document in this table. (Confirmed against real data:
+  naively copying icmaste's REF-dedup onto ictrane would silently collapse ~97% of real
+  transaction rows — this was caught during planning by directly inspecting the sample workbook's
+  raw XML, not assumed.)
+
+**Known limitation**: `ictrane.desc1` mirrors `item_no`'s source Excel column
+(`IctraneExcelCol.ItemNoAndDesc1`) rather than a distinct description field. This reproduces a bug
+in the original app; the correct source column could not be determined from the one available
+sample workbook, so it's kept as-is and flagged both in code (doc comment on
+`IctraneExcelCol.ItemNoAndDesc1`) and in the UI (a persistent banner on the ictrane preview tab).
+Don't silently "fix" this without confirming the correct source column with whoever maintains the
+Excel template.
+
+**DBF export** (`Services/DbfExportService.cs`, `Services/DbfSchemaBuilder.cs`,
+`Services/SqlValueFormatter.cs`) writes via OleDb through the Access Database Engine's dBASE IV
+driver (`Provider=Microsoft.ACE.OLEDB.12.0`) — there's no good managed alternative for writing DBF
+files, so this piece intentionally keeps the original's approach. If a `<table>.dbf` already exists
+in the target folder, it's renamed with a timestamp suffix as a backup (never deleted, no retention
+limit) before a fresh file is created. DBF field names are limited to 10 chars and `[A-Za-z0-9_]`;
+`DbfSchemaBuilder.SanitizeColumnName` enforces this for both the generated `CREATE TABLE` and
+`INSERT` column lists (the original only sanitized names for `CREATE TABLE`, not `INSERT`, which
+was a latent bug — harmless today since no current column name needs sanitizing, but fixed here to
+guard against future schema edits).
+
+**Error handling**: nothing should ever crash the app or fail silently (the original did both,
+depending on which stage failed — see the git history / design notes for details if needed). Excel
+open failures and column-count validation failures are fatal for a stage; per-row parse/blank-field
+issues are recorded as a `RowSkipReason` and the row is skipped, not fatal; DBF export failures are
+fatal for that stage only, with per-row INSERT failures caught individually so one bad row doesn't
+lose the rest of the file. `MainViewModel.RunAsync` always runs both the icmaste and ictrane stages
+(one doesn't block the other except when the workbook itself can't be opened at all), and wraps the
+whole pipeline in an outer catch as a backstop.
+
+**Persistence**: `SettingsService` reads `appsettings.json` (initial default paths, shipped with
+the app) and a separate `%AppData%\eneBridge\settings.json` (last-used paths, user-writable,
+overrides the defaults). `RunHistoryService` persists run history to
+`%AppData%\eneBridge\runHistory.json`. `FileLogger` writes full exception detail to a rolling log
+file under `%AppData%\eneBridge\logs\`, kept separate from the concise on-screen run history.
+
+## Current status
+
+Core services and the WPF UI are implemented; all 47 tests pass, including a real DBF round-trip
+through the actual OleDb/ACE provider (`DbfExportServiceTests`) and full-pipeline verification
+against `reference/data.xlsx` (icmaste: 105 rows read → 3 written; ictrane: 105 rows read → 105
+written). The running app has been manually driven end-to-end (path selection, Run, preview, run
+history) with correct results. The error-path testing (nonexistent Excel path, read-only DBF
+folder, corrupted cell values) called for in the original verification plan is now covered in
+`ExcelReaderServiceTests`, `DbfSchemaBuilderTests`, and `DbfExportServiceTests`.
+
+**Known reliability risk, not yet fixed**: `DbfExportService.Export` catches a per-row
+`OleDbException` during INSERT and keeps reusing the same `OleDbConnection` for the remaining rows
+(by design — see the DBF export section above). While adding tests for this path, a per-row INSERT
+failure (e.g. a value too wide for its DBF field) was found to reliably crash the process afterward
+with a native `AccessViolationException` in `ComObject.Finalize` — reproduced both in the test host
+and in a standalone STA console harness mirroring `MainViewModel.RunAsync`'s shape (one `Export`
+call that hits a row error, followed by a second, separate `Export` call in the same process — i.e.
+icmaste then ictrane in one run). This appears to be an instability in the ACE OleDb dBASE driver's
+COM interop under .NET 8 when a connection that absorbed a row-level error is later followed by
+another OleDb connection in-process, not something caused by test code. No test exercises this path
+in-process (it isn't safe to), and no production fix has been attempted yet — flagged here so it
+isn't lost. If a real row fails during a run, the *other* stage's export in the same run could be at
+risk of crashing the app outright instead of failing gracefully, which would undermine this
+project's "nothing should ever crash the app" goal.

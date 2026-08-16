@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="../tests/eneBridge.Wpf.Core.Tests/eneBridge.Wpf.Core.Tests.csproj" />
+  <Project Path="eneBridge.Wpf.Core/eneBridge.Wpf.Core.csproj" />
+  <Project Path="eneBridge.Wpf/eneBridge.Wpf.csproj" />
+</Solution>

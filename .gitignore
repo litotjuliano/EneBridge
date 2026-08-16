@@ -1,0 +1,15 @@
+# Build output
+bin/
+obj/
+installer/publish/
+installer/Output/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS junk
+.DS_Store
+Thumbs.db
