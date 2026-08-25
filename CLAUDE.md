@@ -28,7 +28,7 @@ reporting instead of the original's silent failures/crashes).
 # Build everything
 dotnet build "src/eneBridge.Wpf.slnx"
 
-# Run all tests (47 tests; requires the Access Database Engine OleDb provider to be
+# Run all tests (49 tests; requires the Access Database Engine OleDb provider to be
 # installed/registered on the machine, since several tests round-trip through real .dbf files)
 dotnet test "tests/eneBridge.Wpf.Core.Tests/eneBridge.Wpf.Core.Tests.csproj"
 
@@ -111,9 +111,9 @@ file under `%AppData%\eneBridge\logs\`, kept separate from the concise on-screen
 
 ## Current status
 
-Core services and the WPF UI are implemented; all 47 tests pass, including a real DBF round-trip
+Core services and the WPF UI are implemented; all 49 tests pass, including a real DBF round-trip
 through the actual OleDb/ACE provider (`DbfExportServiceTests`) and full-pipeline verification
-against `reference/data.xlsx` (icmaste: 105 rows read → 3 written; ictrane: 105 rows read → 105
+against `reference/data.xlsx` (icmaste: 110 rows read → 3 written; ictrane: 110 rows read → 110
 written). The running app has been manually driven end-to-end (path selection, Run, preview, run
 history) with correct results. The error-path testing (nonexistent Excel path, read-only DBF
 folder, corrupted cell values) called for in the original verification plan is now covered in
