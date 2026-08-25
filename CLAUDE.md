@@ -66,6 +66,20 @@ in `IcmasteExcelCol`/`IctraneExcelCol` in the same file — these are the single
 "col[N]" mapping rules, reverse-engineered from the original IL and confirmed against
 `reference/data.xlsx`.
 
+The current invoice template has only 9 columns (`IctraneExcelCol.MinColumnCount = 9`,
+`IcmasteExcelCol.MinColumnCount = 8`); 3 columns an earlier template carried (an unused one,
+`FcRate`, `TaxCode`) are absent from it. When `FcRate`/`TaxCode` come back blank — the column is
+missing entirely, or the specific cell is empty — `ExcelReaderService` defaults them to `0` /
+`"SST0"` rather than leaving them null/blank, matching the literal values every row of the earlier
+template always carried; a blank tax code isn't valid for the downstream EMAS/SST import.
+
+`OpenWorkbook` opens the file via its own `FileStream` requesting `FileShare.ReadWrite` (rather
+than ClosedXML's default, more restrictive sharing mode) and reads it into memory before handing
+it to ClosedXML, so it succeeds even while the source file is already open in Microsoft Excel — a
+common real workflow (checking the invoice before running the tool). A genuine exclusive lock is
+still detected (via `HResult == 0x80070020`, `ERROR_SHARING_VIOLATION`) and surfaces a clear,
+actionable error message rather than a raw exception.
+
 Row validation differs deliberately between the two tables:
 - `icmaste`: skips rows with a blank REF/DATE/CODE/NAME, and **dedupes by REF** — correct here
   because REF is a document number and icmaste is one-row-per-document.
