@@ -71,7 +71,7 @@ public sealed class ExcelReaderService
 
             if (!seenRefs.Add(refValue))
             {
-                skipReasons.Add(new RowSkipReason(excelRow, $"Duplicate REF '{refValue}' (already processed for this document)"));
+                skipReasons.Add(new RowSkipReason(excelRow, $"Duplicate REF '{refValue}' (icmaste keeps only the first row per document; this REF already appeared earlier in this file)"));
                 continue;
             }
 
