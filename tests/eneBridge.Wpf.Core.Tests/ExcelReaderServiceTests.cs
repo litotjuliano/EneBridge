@@ -318,6 +318,18 @@ public class ExcelReaderServiceTests
         Assert.Equal($"{field} value 'abc' is not a valid number", result.SkipReasons[0].Reason);
     }
 
+    [Fact]
+    public void ReadIctrane_TaxCodeBlank_DefaultsToSst0()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildIctraneWorksheet(taxCodeValue: null);
+
+        var result = service.ReadIctrane(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal("SST0", result.Table.Rows[0][IctraneSchema.TaxCode]);
+    }
+
     private static IXLWorksheet NewWorksheet() => new XLWorkbook().AddWorksheet("Sheet1");
 
     private static void SetCell(IXLWorksheet worksheet, int row, int zeroBasedColumn, string? value)

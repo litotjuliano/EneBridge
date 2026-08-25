@@ -156,6 +156,7 @@ public sealed class ExcelReaderService
             if (!TryParseOptionalDecimal(amountRaw, "amount", excelRow, skipReasons, out var amount)) continue;
 
             string taxCode = GetString(worksheet, excelRow, IctraneExcelCol.TaxCode);
+            if (IsBlank(taxCode)) { taxCode = "SST0"; }
 
             var row = table.NewRow();
             row[IctraneSchema.Type] = "IN";
