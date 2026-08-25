@@ -21,7 +21,17 @@ public sealed class ExcelReaderService
 
         try
         {
-            return new XLWorkbook(path);
+            using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var memoryStream = new MemoryStream();
+            fileStream.CopyTo(memoryStream);
+            memoryStream.Position = 0;
+            return new XLWorkbook(memoryStream);
+        }
+        catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020))
+        {
+            throw new ExcelReadException(
+                "The Excel file is currently open in another program. Please close it and click Run again.",
+                ex);
         }
         catch (Exception ex) when (ex is not ExcelReadException)
         {

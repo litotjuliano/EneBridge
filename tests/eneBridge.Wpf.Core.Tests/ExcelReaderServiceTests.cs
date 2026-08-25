@@ -169,12 +169,37 @@ public class ExcelReaderServiceTests
             var ex = Assert.Throws<ExcelReadException>(() => service.OpenWorkbook(lockedPath));
 
             Assert.NotNull(ex.InnerException);
-            Assert.StartsWith("Failed to open Excel file", ex.Message);
+            Assert.Equal(
+                "The Excel file is currently open in another program. Please close it and click Run again.",
+                ex.Message);
         }
         finally
         {
             lockStream.Dispose();
             try { File.Delete(lockedPath); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void OpenWorkbook_FileIsOpenInExcel_SucceedsAnyway()
+    {
+        var service = new ExcelReaderService();
+        var sharedPath = Path.Combine(Path.GetTempPath(), "eneBridge-excelopen-" + Guid.NewGuid().ToString("N") + ".xlsx");
+        File.Copy(FixturePath, sharedPath);
+
+        // Simulates how Excel holds a file open for editing: ReadWrite access, Read share.
+        var excelLikeStream = new FileStream(sharedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+        try
+        {
+            using var workbook = service.OpenWorkbook(sharedPath);
+
+            Assert.NotNull(workbook);
+            Assert.NotEmpty(workbook.Worksheets);
+        }
+        finally
+        {
+            excelLikeStream.Dispose();
+            try { File.Delete(sharedPath); } catch (IOException) { }
         }
     }
 
