@@ -21,7 +21,17 @@ public sealed class ExcelReaderService
 
         try
         {
-            return new XLWorkbook(path);
+            using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var memoryStream = new MemoryStream();
+            fileStream.CopyTo(memoryStream);
+            memoryStream.Position = 0;
+            return new XLWorkbook(memoryStream);
+        }
+        catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020))
+        {
+            throw new ExcelReadException(
+                "The Excel file is currently open in another program. Please close it and click Run again.",
+                ex);
         }
         catch (Exception ex) when (ex is not ExcelReadException)
         {
@@ -77,7 +87,7 @@ public sealed class ExcelReaderService
             }
 
             string fcRateRaw = GetString(worksheet, excelRow, IcmasteExcelCol.FcRate);
-            decimal? fcRate = null;
+            decimal fcRate = 0;
             if (!IsBlank(fcRateRaw))
             {
                 if (!decimal.TryParse(fcRateRaw, out var parsedFcRate))
@@ -89,6 +99,7 @@ public sealed class ExcelReaderService
             }
 
             string taxCode = GetString(worksheet, excelRow, IcmasteExcelCol.TaxCode);
+            if (IsBlank(taxCode)) { taxCode = "SST0"; }
 
             var row = table.NewRow();
             row[IcmasteSchema.Type] = "IN";
@@ -103,7 +114,7 @@ public sealed class ExcelReaderService
             row[IcmasteSchema.Entry] = TextTruncation.Truncate(refValue, 10);
             row[IcmasteSchema.CurrCode] = "MYR";
             row[IcmasteSchema.TaxCode] = TextTruncation.Truncate(taxCode, 8);
-            row[IcmasteSchema.FcRate] = (object?)fcRate ?? DBNull.Value;
+            row[IcmasteSchema.FcRate] = fcRate;
             row[IcmasteSchema.AddCost] = DBNull.Value;
             row[IcmasteSchema.Tick] = DBNull.Value;
             row[IcmasteSchema.BillAge] = DBNull.Value;
@@ -155,6 +166,7 @@ public sealed class ExcelReaderService
             if (!TryParseOptionalDecimal(amountRaw, "amount", excelRow, skipReasons, out var amount)) continue;
 
             string taxCode = GetString(worksheet, excelRow, IctraneExcelCol.TaxCode);
+            if (IsBlank(taxCode)) { taxCode = "SST0"; }
 
             var row = table.NewRow();
             row[IctraneSchema.Type] = "IN";
