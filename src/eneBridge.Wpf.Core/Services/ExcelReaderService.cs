@@ -77,7 +77,7 @@ public sealed class ExcelReaderService
             }
 
             string fcRateRaw = GetString(worksheet, excelRow, IcmasteExcelCol.FcRate);
-            decimal? fcRate = 0;
+            decimal fcRate = 0;
             if (!IsBlank(fcRateRaw))
             {
                 if (!decimal.TryParse(fcRateRaw, out var parsedFcRate))
@@ -104,7 +104,7 @@ public sealed class ExcelReaderService
             row[IcmasteSchema.Entry] = TextTruncation.Truncate(refValue, 10);
             row[IcmasteSchema.CurrCode] = "MYR";
             row[IcmasteSchema.TaxCode] = TextTruncation.Truncate(taxCode, 8);
-            row[IcmasteSchema.FcRate] = (object?)fcRate ?? DBNull.Value;
+            row[IcmasteSchema.FcRate] = fcRate;
             row[IcmasteSchema.AddCost] = DBNull.Value;
             row[IcmasteSchema.Tick] = DBNull.Value;
             row[IcmasteSchema.BillAge] = DBNull.Value;
