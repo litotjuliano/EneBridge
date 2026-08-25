@@ -266,6 +266,20 @@ public class ExcelReaderServiceTests
         Assert.Equal("FCRATE value 'abc' is not a valid number", result.SkipReasons[0].Reason);
     }
 
+    [Fact]
+    public void ReadIcmaste_FcRateAndTaxCodeBlank_DefaultsApplied()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildIcmasteWorksheet(fcRateValue: null, taxCodeValue: null);
+
+        var result = service.ReadIcmaste(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        var row = result.Table.Rows[0];
+        Assert.Equal(0m, row[IcmasteSchema.FcRate]);
+        Assert.Equal("SST0", row[IcmasteSchema.TaxCode]);
+    }
+
     [Theory]
     [InlineData("ref", "ref is blank")]
     [InlineData("itemNo", "item_no is blank")]

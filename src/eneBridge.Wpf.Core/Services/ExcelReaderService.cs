@@ -77,7 +77,7 @@ public sealed class ExcelReaderService
             }
 
             string fcRateRaw = GetString(worksheet, excelRow, IcmasteExcelCol.FcRate);
-            decimal? fcRate = null;
+            decimal? fcRate = 0;
             if (!IsBlank(fcRateRaw))
             {
                 if (!decimal.TryParse(fcRateRaw, out var parsedFcRate))
@@ -89,6 +89,7 @@ public sealed class ExcelReaderService
             }
 
             string taxCode = GetString(worksheet, excelRow, IcmasteExcelCol.TaxCode);
+            if (IsBlank(taxCode)) { taxCode = "SST0"; }
 
             var row = table.NewRow();
             row[IcmasteSchema.Type] = "IN";
