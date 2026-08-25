@@ -2,7 +2,7 @@ namespace eneBridge.Wpf.Core.Models;
 
 /// <summary>
 /// 0-based raw Excel column indices used by the original eneBridge app's mapping logic,
-/// reverse-engineered from IL and confirmed against the real sample data.xlsx (columns A-L).
+/// reverse-engineered from IL and confirmed against the real sample data.xlsx (originally columns A-L; the current invoice template only has columns A-I, so FcRate/TaxCode are read as blank and defaulted — see ExcelReaderService).
 /// </summary>
 public static class IcmasteExcelCol
 {

@@ -61,7 +61,7 @@ that's what the downstream EMAS import expects.
 row/column positions rather than treating the workbook like a database table (which is what the
 original OleDb-based app did, and which silently assumed physical row 1 was a header). The
 row-skip offset is centralized in `Models/ExcelColumnMap.cs`'s `ExcelLayout` (first row actually
-processed = physical row 6), and the raw Excel column indices used by each field are centralized
+processed = physical row 2 for the current invoice template), and the raw Excel column indices used by each field are centralized
 in `IcmasteExcelCol`/`IctraneExcelCol` in the same file — these are the single source of truth for
 "col[N]" mapping rules, reverse-engineered from the original IL and confirmed against
 `reference/data.xlsx`.
