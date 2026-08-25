@@ -35,7 +35,7 @@ public static class IctraneExcelCol
     public const int TaxCode = 11;
 
     /// <summary>Minimum raw column count required (original throws below this).</summary>
-    public const int MinColumnCount = 12;
+    public const int MinColumnCount = 9;
 }
 
 /// <summary>

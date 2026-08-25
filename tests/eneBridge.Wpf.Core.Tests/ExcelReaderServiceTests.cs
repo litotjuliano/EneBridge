@@ -201,7 +201,7 @@ public class ExcelReaderServiceTests
         var ex = Assert.Throws<ExcelValidationException>(() => service.ReadIctrane(worksheet));
 
         Assert.Equal(
-            "The Excel file does not contain the required columns (found 5, need at least 12).",
+            "The Excel file does not contain the required columns (found 5, need at least 9).",
             ex.Message);
     }
 
