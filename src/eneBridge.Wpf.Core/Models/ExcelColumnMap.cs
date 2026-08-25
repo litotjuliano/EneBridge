@@ -39,11 +39,11 @@ public static class IctraneExcelCol
 }
 
 /// <summary>
-/// Defines where real data starts in the source workbook. The original OleDb-based reader used
-/// HDR=YES (treating physical row 1 as a header) and then skipped 4 more data rows before
-/// processing — an undocumented, hardcoded assumption about the workbook template. Expressed here
-/// as an explicit constant so the effective behavior (first physical row processed = 6) is
-/// preserved but no longer opaque.
+/// Defines where real data starts in the source workbook. The current invoice Excel template has
+/// a single header row (row 1) with real data starting immediately on row 2 — no extra rows to
+/// skip. (An older template needed 4 additional rows skipped after the header, treating physical
+/// row 6 as the first data row — reverse-engineered from the original app's OleDb HDR=YES
+/// behavior. That template has been replaced and no longer applies.)
 /// </summary>
 public static class ExcelLayout
 {
