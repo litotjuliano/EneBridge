@@ -31,9 +31,9 @@ public class ExcelReaderServiceTests
 
         var result = service.ReadIcmaste(worksheet);
 
-        Assert.Equal(105, result.RowsRead);
+        Assert.Equal(110, result.RowsRead);
         Assert.Equal(3, result.RowsWritten);
-        Assert.Equal(102, result.SkipReasons.Count);
+        Assert.Equal(107, result.SkipReasons.Count);
 
         var refs = result.Table.Rows.Cast<System.Data.DataRow>()
             .Select(r => (string)r[IcmasteSchema.Ref])
@@ -51,42 +51,44 @@ public class ExcelReaderServiceTests
 
         var result = service.ReadIctrane(worksheet);
 
-        Assert.Equal(105, result.RowsRead);
-        Assert.Equal(105, result.RowsWritten);
+        Assert.Equal(110, result.RowsRead);
+        Assert.Equal(110, result.RowsWritten);
         Assert.Empty(result.SkipReasons);
     }
 
     [Fact]
-    public void ReadIctrane_SpotCheck_RowSixValues()
+    public void ReadIctrane_SpotCheck_FirstProcessedRowValues()
     {
         var service = new ExcelReaderService();
         using var workbook = service.OpenWorkbook(FixturePath);
         var worksheet = workbook.Worksheets.First();
 
         var result = service.ReadIctrane(worksheet);
-        // Physical row 6 is the first processed row -> first row in the table.
+        // Physical row 2 (right after the header row) is the first processed row.
         var row = result.Table.Rows[0];
+
+        Assert.Equal(0.629m, row[IctraneSchema.Qty]);
+        Assert.Equal(900m, row[IctraneSchema.Price]);
+        Assert.Equal(566.10m, row[IctraneSchema.Amount]);
+        Assert.Equal("2501001", row[IctraneSchema.Ref]);
+        Assert.Equal("SST0", row[IctraneSchema.TaxCode]);
+    }
+
+    [Fact]
+    public void ReadIctrane_SpotCheck_SixthProcessedRowValues()
+    {
+        var service = new ExcelReaderService();
+        using var workbook = service.OpenWorkbook(FixturePath);
+        var worksheet = workbook.Worksheets.First();
+
+        var result = service.ReadIctrane(worksheet);
+        // Physical row 7 is the 6th processed row (rows 2,3,4,5,6,7) -> index 5.
+        var row = result.Table.Rows[5];
 
         Assert.Equal(0.362m, row[IctraneSchema.Qty]);
         Assert.Equal(850m, row[IctraneSchema.Price]);
         Assert.Equal(307.7m, row[IctraneSchema.Amount]);
         Assert.Equal("2501001", row[IctraneSchema.Ref]);
-    }
-
-    [Fact]
-    public void ReadIctrane_SpotCheck_RowElevenValues()
-    {
-        var service = new ExcelReaderService();
-        using var workbook = service.OpenWorkbook(FixturePath);
-        var worksheet = workbook.Worksheets.First();
-
-        var result = service.ReadIctrane(worksheet);
-        // Physical row 11 is the 6th processed row (rows 6,7,8,9,10,11) -> index 5.
-        var row = result.Table.Rows[5];
-
-        Assert.Equal(0.912m, row[IctraneSchema.Qty]);
-        Assert.Equal(1030m, row[IctraneSchema.Price]);
-        Assert.Equal(939.36m, row[IctraneSchema.Amount]);
     }
 
     [Fact]
@@ -103,6 +105,7 @@ public class ExcelReaderServiceTests
         Assert.Equal("3000L001", row[IcmasteSchema.Code]);
         Assert.Equal("LAGENDA SP TIMBER SDN BHD", row[IcmasteSchema.Name]);
         Assert.Equal("SST0", row[IcmasteSchema.TaxCode]);
+        Assert.Equal(0m, row[IcmasteSchema.FcRate]);
         Assert.Equal("MYR", row[IcmasteSchema.CurrCode]);
         Assert.Equal("IN", row[IcmasteSchema.Type]);
     }

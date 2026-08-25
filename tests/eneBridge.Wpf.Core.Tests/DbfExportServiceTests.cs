@@ -58,13 +58,13 @@ public class DbfExportServiceTests : IDisposable
 
         Assert.True(ictraneExport.Success, ictraneExport.ErrorMessage);
         Assert.Empty(ictraneExport.RowErrors);
-        Assert.Equal(105, ictraneExport.RowsWritten);
+        Assert.Equal(110, ictraneExport.RowsWritten);
 
         Assert.True(File.Exists(Path.Combine(_scratchFolder, "icmaste.dbf")));
         Assert.True(File.Exists(Path.Combine(_scratchFolder, "ictrane.dbf")));
 
         AssertRowCount("icmaste", 3);
-        AssertRowCount("ictrane", 105);
+        AssertRowCount("ictrane", 110);
     }
 
     [Fact]

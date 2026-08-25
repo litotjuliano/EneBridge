@@ -48,7 +48,7 @@ public static class IctraneExcelCol
 public static class ExcelLayout
 {
     public const int HeaderRows = 1;
-    public const int SkipDataRows = 4;
+    public const int SkipDataRows = 0;
 
     /// <summary>1-based physical row number of the first row that is actually processed.</summary>
     public static int FirstDataRow => HeaderRows + SkipDataRows + 1;
