@@ -19,6 +19,7 @@ public partial class App : Application
 
         var excelReaderService = new ExcelReaderService();
         var dbfExportService = new DbfExportService(fileLogger);
+        var dbfReaderService = new DbfReaderService(fileLogger);
         var settingsService = new SettingsService(AppContext.BaseDirectory);
         var runHistoryService = new RunHistoryService();
         var excelSourceStagingService = new ExcelSourceStagingService();
@@ -26,6 +27,7 @@ public partial class App : Application
         var mainViewModel = new MainViewModel(
             excelReaderService,
             dbfExportService,
+            dbfReaderService,
             settingsService,
             runHistoryService,
             fileLogger,

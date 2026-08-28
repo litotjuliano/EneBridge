@@ -14,6 +14,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly ExcelReaderService _excelReaderService;
     private readonly DbfExportService _dbfExportService;
+    private readonly DbfReaderService _dbfReaderService;
     private readonly SettingsService _settingsService;
     private readonly RunHistoryService _runHistoryService;
     private readonly FileLogger _fileLogger;
@@ -38,6 +39,24 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private DataView? _ictranePreview;
 
+    [ObservableProperty]
+    private DataView? _icmasteDbfPreview;
+
+    [ObservableProperty]
+    private DataView? _ictraneDbfPreview;
+
+    [ObservableProperty]
+    private string _icmasteDbfStatusText = "Run Confirm & Export to verify.";
+
+    [ObservableProperty]
+    private string _ictraneDbfStatusText = "Run Confirm & Export to verify.";
+
+    [ObservableProperty]
+    private bool _icmasteDbfVerified;
+
+    [ObservableProperty]
+    private bool _ictraneDbfVerified;
+
     /// <summary>
     /// When false (default), the preview grids show only the columns ExcelReaderService actually
     /// populates; the rest of the required 151/80-column DBF schema is hidden from view but still
@@ -55,6 +74,7 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(
         ExcelReaderService excelReaderService,
         DbfExportService dbfExportService,
+        DbfReaderService dbfReaderService,
         SettingsService settingsService,
         RunHistoryService runHistoryService,
         FileLogger fileLogger,
@@ -63,6 +83,7 @@ public partial class MainViewModel : ObservableObject
     {
         _excelReaderService = excelReaderService;
         _dbfExportService = dbfExportService;
+        _dbfReaderService = dbfReaderService;
         _settingsService = settingsService;
         _runHistoryService = runHistoryService;
         _fileLogger = fileLogger;
@@ -228,6 +249,12 @@ public partial class MainViewModel : ObservableObject
         IsRunning = true;
         PreviewCommand.NotifyCanExecuteChanged();
         ConfirmExportCommand.NotifyCanExecuteChanged();
+        IcmasteDbfPreview = null;
+        IctraneDbfPreview = null;
+        IcmasteDbfStatusText = "Verifying…";
+        IctraneDbfStatusText = "Verifying…";
+        IcmasteDbfVerified = false;
+        IctraneDbfVerified = false;
 
         string excelPath = ExcelFilePath;
         string dbfFolder = DbfFolderPath;
@@ -244,12 +271,18 @@ public partial class MainViewModel : ObservableObject
                 IcmasteStage,
                 _icmasteReadResult!,
                 result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
+            await VerifyDbfAsync(
+                IcmasteSchema.TableName, dbfFolder, icmasteExport,
+                v => IcmasteDbfPreview = v, s => IcmasteDbfStatusText = s, b => IcmasteDbfVerified = b);
 
             ictraneExport = await ExportStageAsync(
                 "ictrane",
                 IctraneStage,
                 _ictraneReadResult!,
                 result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
+            await VerifyDbfAsync(
+                IctraneSchema.TableName, dbfFolder, ictraneExport,
+                v => IctraneDbfPreview = v, s => IctraneDbfStatusText = s, b => IctraneDbfVerified = b);
         }
         catch (Exception ex)
         {
@@ -334,6 +367,50 @@ public partial class MainViewModel : ObservableObject
             AppendLog($"[{label}] Failed: {ex.Message}");
             stage.Complete(false, ex.Message);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the just-exported table back from its .dbf file and compares the row count against
+    /// what export reported writing, so a silent/partial export failure (e.g. the process dying
+    /// mid-write — see DbfExportService's native-crash risk) is visible in the UI instead of only
+    /// discoverable by inspecting the DBF folder directly. Never throws.
+    /// </summary>
+    private async Task VerifyDbfAsync(
+        string tableName,
+        string dbfFolder,
+        StageExportResult? exportResult,
+        Action<DataView?> setPreview,
+        Action<string> setStatusText,
+        Action<bool> setVerified)
+    {
+        var readResult = await Task.Run(() => _dbfReaderService.Read(dbfFolder, tableName));
+        setPreview(readResult.Success ? readResult.Table.DefaultView : null);
+
+        if (!readResult.Success)
+        {
+            setStatusText($"Could not verify: {readResult.ErrorMessage}");
+            setVerified(false);
+            return;
+        }
+
+        var expected = exportResult?.RowsWritten ?? 0;
+        var actual = readResult.RowCount;
+
+        if ((exportResult?.Success ?? false) && expected == actual)
+        {
+            setStatusText($"{tableName}: {actual} row(s) written and confirmed in DBF ✓");
+            setVerified(true);
+        }
+        else if (exportResult?.Success ?? false)
+        {
+            setStatusText($"{tableName}: wrote {expected} row(s) but DBF currently has {actual} ⚠");
+            setVerified(false);
+        }
+        else
+        {
+            setStatusText($"{tableName}: export failed — DBF currently has {actual} row(s) (may be from a previous run)");
+            setVerified(false);
         }
     }
 
