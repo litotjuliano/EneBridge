@@ -19,6 +19,7 @@ public partial class App : Application
         var settingsService = new SettingsService(AppContext.BaseDirectory);
         var runHistoryService = new RunHistoryService();
         var fileLogger = new FileLogger();
+        var excelSourceStagingService = new ExcelSourceStagingService();
 
         var mainViewModel = new MainViewModel(
             excelReaderService,
@@ -26,6 +27,7 @@ public partial class App : Application
             settingsService,
             runHistoryService,
             fileLogger,
+            excelSourceStagingService,
             AppContext.BaseDirectory);
         mainViewModel.Initialize();
 

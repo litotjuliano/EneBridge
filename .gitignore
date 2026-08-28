@@ -13,3 +13,6 @@ installer/Output/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Brainstorming visual companion scratch files
+.superpowers/

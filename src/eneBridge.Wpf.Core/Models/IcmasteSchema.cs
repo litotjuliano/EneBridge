@@ -12,14 +12,12 @@ public static class IcmasteSchema
     public const string TableName = "icmaste";
 
     // Columns actually populated from Excel — see ExcelReaderService.
-    public const string Void = "VOID";
     public const string Type = "TYPE";
     public const string Entry = "ENTRY";
     public const string Ref = "REF";
     public const string Date = "DATE";
     public const string Code = "CODE";
     public const string Name = "NAME";
-    public const string Posted = "POSTED";
     public const string Accno = "ACCNO";
     public const string User = "USER";
     public const string PostAccno = "POSTACCNO";
@@ -34,6 +32,11 @@ public static class IcmasteSchema
     public const string Atms = "ATMS";
     public const string DepPaid = "DEPPAID";
     public const string Erefund = "EREFUND";
+
+    // Part of the required schema below (see BuildColumns) but never assigned a value by
+    // ExcelReaderService — declared here only because BuildColumns references them by name.
+    public const string Void = "VOID";
+    public const string Posted = "POSTED";
 
     public static IReadOnlyList<DbfColumnDefinition> Columns { get; } = BuildColumns();
 

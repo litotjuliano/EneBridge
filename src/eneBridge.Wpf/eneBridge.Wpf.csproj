@@ -14,10 +14,21 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- Single source of truth for the app's version: shown in the window title (MainWindow.xaml.cs)
+         and kept in sync with installer/eneBridge.iss's MyAppVersion by installer/installer.ps1. -->
+    <Version>1.0.0</Version>
+    <!-- Without this, the SDK appends "+<git-commit-hash>" to InformationalVersion, which would
+         leak a 40-character hash into the window title. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.ico" />
   </ItemGroup>
 
 </Project>

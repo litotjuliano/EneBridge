@@ -5,97 +5,169 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:eneBridge.Wpf"
         mc:Ignorable="d"
-        Title="eneBridge 2.0" Height="800" Width="1150">
+        Icon="Assets/logo.ico"
+        Height="800" Width="1150">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="2*"/>
-            <RowDefinition Height="1*"/>
         </Grid.RowDefinitions>
 
-        <!-- Path panel -->
-        <GroupBox Grid.Row="0" Header="File Paths" Margin="0,0,0,8">
-            <Grid Margin="8">
-                <Grid.RowDefinitions>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="eneBridge — Excel to EMAS Import Bridge" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Exit" Click="ExitButton_Click" Padding="16,4" VerticalAlignment="Center"/>
+        </Grid>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Excel file:" VerticalAlignment="Center" Margin="0,0,8,4"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ExcelFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,4" VerticalContentAlignment="Center"/>
-                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Command="{Binding BrowseExcelCommand}" Padding="10,2" Margin="0,0,0,4"/>
+        <!-- Workflow tabs -->
+        <TabControl Grid.Row="1">
+            <TabControl.ItemContainerStyle>
+                <!--
+                    Foreground/FontWeight/FontSize are inherited WPF properties, so setting them
+                    directly on TabItem would cascade into that tab's whole content area (every
+                    label inside would go bold/blue too). Scoping via HeaderTemplate confines the
+                    styling to just the tab-strip text.
+                -->
+                <Style TargetType="TabItem">
+                    <Setter Property="Padding" Value="20,10"/>
+                    <Setter Property="HeaderTemplate">
+                        <Setter.Value>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="14"/>
+                            </DataTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="HeaderTemplate">
+                                <Setter.Value>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="14" FontWeight="Bold" Foreground="#1565C0"/>
+                                    </DataTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </TabControl.ItemContainerStyle>
+            <TabItem Header="Invoice">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="1*"/>
+                    </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="DBF folder:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DbfFolderPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" VerticalContentAlignment="Center"/>
-                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Command="{Binding BrowseDbfFolderCommand}" Padding="10,2"/>
-            </Grid>
-        </GroupBox>
+                    <!-- Path panel -->
+                    <GroupBox Grid.Row="0" Header="File Paths" Margin="0,0,0,8">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-        <!-- Run panel -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-            <Button Content="Run" Command="{Binding RunCommand}" Padding="24,6" FontWeight="Bold" MinWidth="100"/>
-        </StackPanel>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Excel file:" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ExcelFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,4" VerticalContentAlignment="Center"/>
+                            <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Command="{Binding BrowseExcelCommand}" Padding="10,2" Margin="0,0,0,4"/>
 
-        <!-- Progress panel -->
-        <GroupBox Grid.Row="2" Header="Progress" Margin="0,0,0,8">
-            <UniformGrid Columns="2" Margin="8">
-                <StackPanel Margin="0,0,8,0">
-                    <TextBlock Text="{Binding IcmasteStage.Name}" FontWeight="Bold"/>
-                    <ProgressBar IsIndeterminate="{Binding IcmasteStage.IsRunning}" Height="6" Margin="0,4"/>
-                    <TextBlock Text="{Binding IcmasteStage.StatusText}" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="DBF folder:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DbfFolderPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" VerticalContentAlignment="Center"/>
+                            <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Command="{Binding BrowseDbfFolderCommand}" Padding="10,2"/>
+                        </Grid>
+                    </GroupBox>
+
+                    <!-- Run panel -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Preview" Command="{Binding PreviewCommand}" Padding="24,6" FontWeight="Bold" MinWidth="100" Margin="0,0,8,0"/>
+                        <Button Content="Confirm &amp; Export" Command="{Binding ConfirmExportCommand}" Padding="24,6" FontWeight="Bold" MinWidth="140"/>
+                    </StackPanel>
+
+                    <!-- Progress panel -->
+                    <GroupBox Grid.Row="2" Header="Progress" Margin="0,0,0,8">
+                        <UniformGrid Columns="2" Margin="8">
+                            <StackPanel Margin="0,0,8,0">
+                                <TextBlock Text="{Binding IcmasteStage.Name}" FontWeight="Bold"/>
+                                <ProgressBar IsIndeterminate="{Binding IcmasteStage.IsRunning}" Height="6" Margin="0,4"/>
+                                <TextBlock Text="{Binding IcmasteStage.StatusText}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="{Binding IctraneStage.Name}" FontWeight="Bold"/>
+                                <ProgressBar IsIndeterminate="{Binding IctraneStage.IsRunning}" Height="6" Margin="0,4"/>
+                                <TextBlock Text="{Binding IctraneStage.StatusText}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </UniformGrid>
+                    </GroupBox>
+
+                    <!-- Preview panel -->
+                    <GroupBox Grid.Row="3" Margin="0,0,0,8">
+                        <GroupBox.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Preview" VerticalAlignment="Center"/>
+                                <CheckBox Content="Show all columns" IsChecked="{Binding ShowAllColumns}" Margin="16,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </GroupBox.Header>
+                        <TabControl>
+                            <TabItem Header="icmaste">
+                                <DataGrid x:Name="IcmasteGrid" ItemsSource="{Binding IcmastePreview}" IsReadOnly="True" AutoGenerateColumns="True" FrozenColumnCount="1"
+                                          AutoGeneratedColumns="IcmasteGrid_AutoGeneratedColumns"/>
+                            </TabItem>
+                            <TabItem Header="ictrane">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Background="#FFF3CD" Padding="6" TextWrapping="Wrap" Visibility="Collapsed"
+                                               Text="Note: desc1 currently mirrors item_no's source Excel column — known limitation, do not treat desc1 as an independent description field until the correct source column is confirmed."/>
+                                    <DataGrid x:Name="IctraneGrid" ItemsSource="{Binding IctranePreview}" IsReadOnly="True" AutoGenerateColumns="True" FrozenColumnCount="1"
+                                              AutoGeneratedColumns="IctraneGrid_AutoGeneratedColumns"/>
+                                </DockPanel>
+                            </TabItem>
+                        </TabControl>
+                    </GroupBox>
+
+                    <!-- Run history / log panel -->
+                    <GroupBox Grid.Row="4" Header="Run History &amp; Log">
+                        <Grid Margin="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <DataGrid Grid.Column="0" ItemsSource="{Binding RunHistory}" IsReadOnly="True" AutoGenerateColumns="False" Margin="0,0,4,0">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat='yyyy-MM-dd HH:mm:ss'}"/>
+                                    <DataGridTextColumn Header="icmaste R/S/W" Binding="{Binding IcmasteRowsRead, StringFormat='{}{0}'}"/>
+                                    <DataGridTextColumn Header="icmaste OK" Binding="{Binding IcmasteSuccess}"/>
+                                    <DataGridTextColumn Header="ictrane R/S/W" Binding="{Binding IctraneRowsRead, StringFormat='{}{0}'}"/>
+                                    <DataGridTextColumn Header="ictrane OK" Binding="{Binding IctraneSuccess}"/>
+                                    <DataGridTextColumn Header="Error" Binding="{Binding ErrorSummary}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <ListBox Grid.Column="1" ItemsSource="{Binding LogLines}" Margin="4,0,0,0" FontFamily="Consolas" FontSize="11" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                        </Grid>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Stock Received">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="Stock Received" FontSize="18" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Coming soon — awaiting requirements from client." Foreground="Gray" Margin="0,8,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
-                <StackPanel>
-                    <TextBlock Text="{Binding IctraneStage.Name}" FontWeight="Bold"/>
-                    <ProgressBar IsIndeterminate="{Binding IctraneStage.IsRunning}" Height="6" Margin="0,4"/>
-                    <TextBlock Text="{Binding IctraneStage.StatusText}" TextWrapping="Wrap"/>
-                </StackPanel>
-            </UniformGrid>
-        </GroupBox>
+            </TabItem>
+        </TabControl>
 
-        <!-- Preview panel -->
-        <GroupBox Grid.Row="3" Header="Preview" Margin="0,0,0,8">
-            <TabControl>
-                <TabItem Header="icmaste">
-                    <DataGrid ItemsSource="{Binding IcmastePreview}" IsReadOnly="True" AutoGenerateColumns="True" FrozenColumnCount="1"/>
-                </TabItem>
-                <TabItem Header="ictrane">
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Top" Background="#FFF3CD" Padding="6" TextWrapping="Wrap"
-                                   Text="Note: desc1 currently mirrors item_no's source Excel column — known limitation, do not treat desc1 as an independent description field until the correct source column is confirmed."/>
-                        <DataGrid ItemsSource="{Binding IctranePreview}" IsReadOnly="True" AutoGenerateColumns="True" FrozenColumnCount="1"/>
-                    </DockPanel>
-                </TabItem>
-            </TabControl>
-        </GroupBox>
-
-        <!-- Run history / log panel -->
-        <GroupBox Grid.Row="4" Header="Run History &amp; Log">
-            <Grid Margin="4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*"/>
-                    <ColumnDefinition Width="1*"/>
-                </Grid.ColumnDefinitions>
-
-                <DataGrid Grid.Column="0" ItemsSource="{Binding RunHistory}" IsReadOnly="True" AutoGenerateColumns="False" Margin="0,0,4,0">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat='yyyy-MM-dd HH:mm:ss'}"/>
-                        <DataGridTextColumn Header="icmaste R/S/W" Binding="{Binding IcmasteRowsRead, StringFormat='{}{0}'}"/>
-                        <DataGridTextColumn Header="icmaste OK" Binding="{Binding IcmasteSuccess}"/>
-                        <DataGridTextColumn Header="ictrane R/S/W" Binding="{Binding IctraneRowsRead, StringFormat='{}{0}'}"/>
-                        <DataGridTextColumn Header="ictrane OK" Binding="{Binding IctraneSuccess}"/>
-                        <DataGridTextColumn Header="Error" Binding="{Binding ErrorSummary}" Width="*"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-
-                <ListBox Grid.Column="1" ItemsSource="{Binding LogLines}" Margin="4,0,0,0" FontFamily="Consolas" FontSize="11" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
-            </Grid>
-        </GroupBox>
+        <!-- Footer -->
+        <TextBlock Grid.Row="2" Text="For technical support, please contact EnE Computer." HorizontalAlignment="Center" Foreground="Gray" Margin="0,8,0,0"/>
     </Grid>
 </Window>

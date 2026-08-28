@@ -17,7 +17,11 @@ public partial class MainViewModel : ObservableObject
     private readonly SettingsService _settingsService;
     private readonly RunHistoryService _runHistoryService;
     private readonly FileLogger _fileLogger;
+    private readonly ExcelSourceStagingService _excelSourceStagingService;
     private readonly string _appBaseDirectory;
+
+    private StageReadResult? _icmasteReadResult;
+    private StageReadResult? _ictraneReadResult;
 
     [ObservableProperty]
     private string _excelFilePath = string.Empty;
@@ -34,6 +38,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private DataView? _ictranePreview;
 
+    /// <summary>
+    /// When false (default), the preview grids show only the columns ExcelReaderService actually
+    /// populates; the rest of the required 151/80-column DBF schema is hidden from view but still
+    /// fully exported unchanged. Purely a display preference — never affects what gets written.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showAllColumns;
+
     public ObservableCollection<RunHistoryEntry> RunHistory { get; } = [];
     public ObservableCollection<string> LogLines { get; } = [];
 
@@ -46,6 +58,7 @@ public partial class MainViewModel : ObservableObject
         SettingsService settingsService,
         RunHistoryService runHistoryService,
         FileLogger fileLogger,
+        ExcelSourceStagingService excelSourceStagingService,
         string appBaseDirectory)
     {
         _excelReaderService = excelReaderService;
@@ -53,6 +66,7 @@ public partial class MainViewModel : ObservableObject
         _settingsService = settingsService;
         _runHistoryService = runHistoryService;
         _fileLogger = fileLogger;
+        _excelSourceStagingService = excelSourceStagingService;
         _appBaseDirectory = appBaseDirectory;
     }
 
@@ -79,8 +93,30 @@ public partial class MainViewModel : ObservableObject
         };
         if (dialog.ShowDialog() == true)
         {
-            ExcelFilePath = dialog.FileName;
+            ExcelFilePath = StageExcelSource(dialog.FileName);
             SaveUserPaths();
+        }
+    }
+
+    private const string InvoiceStagedFileName = "invoice.xlsx";
+
+    /// <summary>
+    /// Copies the picked Excel file into the local staging folder so later runs don't depend on
+    /// removable/network media staying plugged in. Never blocks the user: if staging fails for any
+    /// reason, the failure is logged and the original picked path is used as-is.
+    /// </summary>
+    private string StageExcelSource(string originalPath)
+    {
+        try
+        {
+            var stagedPath = _excelSourceStagingService.StageFile(originalPath, InvoiceStagedFileName);
+            _fileLogger.LogInfo($"Imported Excel source '{originalPath}' -> '{stagedPath}'");
+            return stagedPath;
+        }
+        catch (Exception ex)
+        {
+            _fileLogger.LogException("Failed to stage Excel source file", ex);
+            return originalPath;
         }
     }
 
@@ -107,26 +143,35 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
-    private bool CanRun() => !IsRunning;
+    partial void OnExcelFilePathChanged(string value) => InvalidatePreview();
+    partial void OnDbfFolderPathChanged(string value) => InvalidatePreview();
 
-    [RelayCommand(CanExecute = nameof(CanRun))]
-    private async Task RunAsync()
+    private void InvalidatePreview()
+    {
+        _icmasteReadResult = null;
+        _ictraneReadResult = null;
+        ConfirmExportCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanPreview() => !IsRunning;
+
+    /// <summary>
+    /// Reads the Excel file and populates the previews/skip-reason log. Writes nothing to disk —
+    /// this is the pre-verify checkpoint before Confirm &amp; Export actually writes the DBF files.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPreview))]
+    private async Task PreviewAsync()
     {
         IsRunning = true;
-        RunCommand.NotifyCanExecuteChanged();
+        PreviewCommand.NotifyCanExecuteChanged();
+        ConfirmExportCommand.NotifyCanExecuteChanged();
         LogLines.Clear();
         IcmasteStage.Reset();
         IctraneStage.Reset();
+        _icmasteReadResult = null;
+        _ictraneReadResult = null;
 
         string excelPath = ExcelFilePath;
-        string dbfFolder = DbfFolderPath;
-        var stopwatch = Stopwatch.StartNew();
-
-        StageReadResult? icmasteRead = null;
-        StageExportResult? icmasteExport = null;
-        StageReadResult? ictraneRead = null;
-        StageExportResult? ictraneExport = null;
-        string? fatalError = null;
 
         try
         {
@@ -135,7 +180,6 @@ public partial class MainViewModel : ObservableObject
             if (openResult.Workbook is null)
             {
                 var message = openResult.Error ?? "Failed to open the Excel file.";
-                fatalError = message;
                 AppendLog($"Cannot open Excel file: {message}");
                 IcmasteStage.Fail(message);
                 IctraneStage.Fail(message);
@@ -147,28 +191,70 @@ public partial class MainViewModel : ObservableObject
                     var workbook = openResult.Workbook;
                     var worksheet = workbook.Worksheets.First();
 
-                    (icmasteRead, icmasteExport) = await RunStageAsync(
+                    _icmasteReadResult = await ReadStageAsync(
                         "icmaste",
                         IcmasteStage,
                         () => _excelReaderService.ReadIcmaste(worksheet),
-                        result => IcmastePreview = result.Table.DefaultView,
-                        (result, columns) => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, columns),
-                        IcmasteSchema.Columns);
+                        result => IcmastePreview = result.Table.DefaultView);
 
-                    (ictraneRead, ictraneExport) = await RunStageAsync(
+                    _ictraneReadResult = await ReadStageAsync(
                         "ictrane",
                         IctraneStage,
                         () => _excelReaderService.ReadIctrane(worksheet),
-                        result => IctranePreview = result.Table.DefaultView,
-                        (result, columns) => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, columns),
-                        IctraneSchema.Columns);
+                        result => IctranePreview = result.Table.DefaultView);
                 }
             }
         }
         catch (Exception ex)
         {
             // Outer backstop: nothing should ever crash the app.
-            _fileLogger.LogException("Unhandled error during run", ex);
+            _fileLogger.LogException("Unhandled error during preview", ex);
+            AppendLog($"Unexpected error: {ex.Message}");
+        }
+        finally
+        {
+            IsRunning = false;
+            PreviewCommand.NotifyCanExecuteChanged();
+            ConfirmExportCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanExport() => !IsRunning && _icmasteReadResult is not null && _ictraneReadResult is not null;
+
+    /// <summary>Writes the DBF files from the read results Preview already produced.</summary>
+    [RelayCommand(CanExecute = nameof(CanExport))]
+    private async Task ConfirmExportAsync()
+    {
+        IsRunning = true;
+        PreviewCommand.NotifyCanExecuteChanged();
+        ConfirmExportCommand.NotifyCanExecuteChanged();
+
+        string excelPath = ExcelFilePath;
+        string dbfFolder = DbfFolderPath;
+        var stopwatch = Stopwatch.StartNew();
+
+        StageExportResult? icmasteExport = null;
+        StageExportResult? ictraneExport = null;
+        string? fatalError = null;
+
+        try
+        {
+            icmasteExport = await ExportStageAsync(
+                "icmaste",
+                IcmasteStage,
+                _icmasteReadResult!,
+                result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
+
+            ictraneExport = await ExportStageAsync(
+                "ictrane",
+                IctraneStage,
+                _ictraneReadResult!,
+                result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
+        }
+        catch (Exception ex)
+        {
+            // Outer backstop: nothing should ever crash the app.
+            _fileLogger.LogException("Unhandled error during export", ex);
             AppendLog($"Unexpected error: {ex.Message}");
             fatalError = ex.Message;
         }
@@ -179,12 +265,12 @@ public partial class MainViewModel : ObservableObject
             {
                 ExcelPath = excelPath,
                 DbfFolder = dbfFolder,
-                IcmasteRowsRead = icmasteRead?.RowsRead ?? 0,
-                IcmasteRowsSkipped = icmasteRead?.SkipReasons.Count ?? 0,
+                IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
+                IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
                 IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
                 IcmasteSuccess = icmasteExport?.Success ?? false,
-                IctraneRowsRead = ictraneRead?.RowsRead ?? 0,
-                IctraneRowsSkipped = ictraneRead?.SkipReasons.Count ?? 0,
+                IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
+                IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
                 IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
                 IctraneSuccess = ictraneExport?.Success ?? false,
                 ErrorSummary = fatalError,
@@ -193,30 +279,37 @@ public partial class MainViewModel : ObservableObject
             _runHistoryService.Append(historyEntry);
             RunHistory.Insert(0, historyEntry);
             IsRunning = false;
-            RunCommand.NotifyCanExecuteChanged();
+            PreviewCommand.NotifyCanExecuteChanged();
+            ConfirmExportCommand.NotifyCanExecuteChanged();
         }
     }
 
-    /// <summary>Reads then exports one table, logging skip reasons/row errors and updating the stage VM. Never throws — failures are caught and recorded on the stage.</summary>
-    private async Task<(StageReadResult? read, StageExportResult? export)> RunStageAsync(
+    /// <summary>Reads one table, logging skip reasons and updating the stage VM. Never throws.</summary>
+    private async Task<StageReadResult> ReadStageAsync(
         string label,
         StageProgressViewModel stage,
         Func<StageReadResult> read,
-        Action<StageReadResult> onRead,
-        Func<StageReadResult, IReadOnlyList<DbfColumnDefinition>, StageExportResult> export,
-        IReadOnlyList<DbfColumnDefinition> schema)
+        Action<StageReadResult> onRead)
+    {
+        var readResult = await Task.Run(read);
+        onRead(readResult);
+
+        var readyCount = readResult.Table.Rows.Count;
+        stage.Complete(true, $"Read {readResult.RowsRead}, skipped {readResult.SkipReasons.Count}, {readyCount} ready to export");
+
+        return readResult;
+    }
+
+    /// <summary>Exports one already-read table, logging row errors and updating the stage VM. Never throws.</summary>
+    private async Task<StageExportResult?> ExportStageAsync(
+        string label,
+        StageProgressViewModel stage,
+        StageReadResult readResult,
+        Func<StageReadResult, StageExportResult> export)
     {
         try
         {
-            var readResult = await Task.Run(read);
-            foreach (var reason in readResult.SkipReasons)
-            {
-                AppendLog($"[{label}] Row {reason.ExcelRow}: {reason.Reason}");
-            }
-            onRead(readResult);
-            AppendLog($"[{label}] Read {readResult.RowsRead}, skipped {readResult.SkipReasons.Count}, parsed {readResult.RowsWritten}");
-
-            var exportResult = await Task.Run(() => export(readResult, schema));
+            var exportResult = await Task.Run(() => export(readResult));
             foreach (var rowError in exportResult.RowErrors)
             {
                 AppendLog($"[{label}] {rowError}");
@@ -224,6 +317,7 @@ public partial class MainViewModel : ObservableObject
 
             if (exportResult.Success)
             {
+                AppendLog($"[{label}] Done — written {exportResult.RowsWritten} row(s).");
                 stage.Complete(true, $"Read {readResult.RowsRead}, skipped {readResult.SkipReasons.Count}, written {exportResult.RowsWritten}");
             }
             else
@@ -232,14 +326,14 @@ public partial class MainViewModel : ObservableObject
                 stage.Complete(false, $"Export failed: {exportResult.ErrorMessage}");
             }
 
-            return (readResult, exportResult);
+            return exportResult;
         }
         catch (Exception ex)
         {
-            _fileLogger.LogException($"{label} stage failed", ex);
+            _fileLogger.LogException($"{label} stage export failed", ex);
             AppendLog($"[{label}] Failed: {ex.Message}");
             stage.Complete(false, ex.Message);
-            return (null, null);
+            return null;
         }
     }
 
