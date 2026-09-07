@@ -42,7 +42,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "publish\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-Source: "..\prerequisites\accessdatabaseengine_X64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "..\prerequisites\accessdatabaseengine_X64.exe"; DestDir: "{app}\prerequisites"; Flags: ignoreversion
 Source: "..\prerequisites\dotnet-runtime-8.0.23-win-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
@@ -51,17 +51,48 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{tmp}\accessdatabaseengine_X64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Installing Access Database Engine..."; Check: not IsAccessDatabaseEngineInstalled
+Filename: "{app}\prerequisites\accessdatabaseengine_X64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Installing Access Database Engine..."; Check: not IsAccessDatabaseEngineInstalled
 Filename: "{tmp}\dotnet-runtime-8.0.23-win-x64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Installing .NET 8 Desktop Runtime..."; Check: not IsDotNet8DesktopRuntimeInstalled
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function IsAccessDatabaseEngineInstalled(): Boolean;
+function GetAceInprocServerPath(): String;
+var
+  ClsidStr: String;
+  DllPath: String;
 begin
-  { Checks the actual COM registration for the ACE OleDb provider that DbfExportService depends
-    on (Provider=Microsoft.ACE.OLEDB.12.0) -- the most direct signal that it's already usable. }
-  Result := RegKeyExists(HKLM, 'SOFTWARE\Classes\Microsoft.ACE.OLEDB.12.0\CLSID') or
-            RegKeyExists(HKLM, 'SOFTWARE\WOW6432Node\Classes\Microsoft.ACE.OLEDB.12.0\CLSID');
+  { Resolves what DLL Microsoft.ACE.OLEDB.12.0 actually points at: read the ProgID's CLSID, then
+    that CLSID's InprocServer32 default value, checking both the native and Wow6432Node registry
+    views since the provider can be registered under either depending on what else is installed. }
+  Result := '';
+
+  if not (RegQueryStringValue(HKLM, 'SOFTWARE\Classes\Microsoft.ACE.OLEDB.12.0\CLSID', '', ClsidStr) or
+          RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Classes\Microsoft.ACE.OLEDB.12.0\CLSID', '', ClsidStr)) then
+    exit;
+
+  if RegQueryStringValue(HKLM, 'SOFTWARE\Classes\CLSID\' + ClsidStr + '\InprocServer32', '', DllPath) then
+  begin
+    Result := DllPath;
+    exit;
+  end;
+
+  if RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Classes\CLSID\' + ClsidStr + '\InprocServer32', '', DllPath) then
+    Result := DllPath;
+end;
+
+function IsAccessDatabaseEngineInstalled(): Boolean;
+var
+  DllPath: String;
+begin
+  { A key-existence check alone isn't enough: Office's Click-to-Run install also registers
+    Microsoft.ACE.OLEDB.12.0, pointing at its own sandboxed copy of ACEOLEDB.DLL (path contains
+    '\root\VFS\'), which crashes natively (AccessViolationException) on CREATE TABLE/write --
+    confirmed live on a real machine, see
+    docs/superpowers/specs/2026-09-07-dbf-export-crash-prevention-design.md. Only the standalone
+    redistributable's copy (this installer's own accessdatabaseengine_X64.exe) counts as properly
+    installed here. }
+  DllPath := GetAceInprocServerPath();
+  Result := (DllPath <> '') and (Pos('\root\VFS\', DllPath) = 0);
 end;
 
 function IsDotNet8DesktopRuntimeInstalled(): Boolean;
