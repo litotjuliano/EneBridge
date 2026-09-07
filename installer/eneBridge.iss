@@ -13,7 +13,7 @@
 ; recognized as an in-place upgrade of the same install rather than a separate parallel one.
 
 #define MyAppName "eneBridge"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "EnE Computer"
 #define MyAppExeName "eneBridge.Wpf.exe"
 

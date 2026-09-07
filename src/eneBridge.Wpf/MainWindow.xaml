@@ -203,7 +203,6 @@
             <TabItem Header="Stock Received">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                     <TextBlock Text="Stock Received" FontSize="18" FontWeight="Bold" HorizontalAlignment="Center"/>
-                    <TextBlock Text="Coming soon — awaiting requirements from client." Foreground="Gray" Margin="0,8,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
             </TabItem>
         </TabControl>
