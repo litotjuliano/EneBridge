@@ -120,6 +120,23 @@ limit) before a fresh file is created. DBF field names are limited to 10 chars a
 was a latent bug — harmless today since no current column name needs sanitizing, but fixed here to
 guard against future schema edits).
 
+**DBF export crash prevention**: four independent layers guard against the ACE OleDb driver's
+native-crash risk described above and the incident that surfaced it (`Microsoft.ACE.OLEDB.12.0`
+silently resolving to Office Click-to-Run's own sandboxed `ACEOLEDB.DLL` instead of the standalone
+redistributable — see `docs/superpowers/specs/2026-09-07-dbf-export-crash-prevention-design.md`
+for the full incident writeup). `DbfSafetyBackupService` copies `icmaste.dbf`/`ictrane.dbf` (plus
+`.FPT` companion) to `%AppData%\eneBridge\Backups\<table>\` before anything else runs in
+`ConfirmExportAsync` — plain `File.Copy`, independent of OleDb, so it works even if the driver
+itself is broken. `AceEngineGuardService` spawns `eneBridge.Wpf.exe --selftest-ace` as a disposable
+child process once per session (via `AceEngineSelfTestService`, a real DBF round-trip through a
+throwaway table) so a native crash from a broken driver only kills that child, never the app;
+`MainViewModel.CanExport` is gated on the result, with a "Fix it now" repair flow that re-runs the
+bundled `accessdatabaseengine_X64.exe` elevated. `MainViewModel.ConfirmTablesReadableAsync` warns
+(Continue/Cancel) if either table can't be read before the export's own backup-rename runs.
+`installer/eneBridge.iss`'s `IsAccessDatabaseEngineInstalled` now resolves the ACE provider's
+actual bound DLL path (not just registry-key existence) so it correctly detects and fixes the
+Office Click-to-Run case instead of silently skipping the real fix.
+
 **Error handling**: nothing should ever crash the app or fail silently (the original did both,
 depending on which stage failed — see the git history / design notes for details if needed). Excel
 open failures and column-count validation failures are fatal for a stage; per-row parse/blank-field
@@ -178,4 +195,7 @@ another OleDb connection in-process, not something caused by test code. No test 
 in-process (it isn't safe to), and no production fix has been attempted yet — flagged here so it
 isn't lost. If a real row fails during a run, the *other* stage's export in the same run could be at
 risk of crashing the app outright instead of failing gracefully, which would undermine this
-project's "nothing should ever crash the app" goal.
+project's "nothing should ever crash the app" goal. Separately, a distinct and more common trigger
+for this same crash class — the ACE OleDb provider resolving to Office Click-to-Run's sandboxed
+DLL instead of the standalone redistributable — was found and mitigated (see "DBF export crash
+prevention" above); this per-row/reused-connection risk remains open.
