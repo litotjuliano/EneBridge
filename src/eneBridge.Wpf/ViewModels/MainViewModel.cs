@@ -2,11 +2,13 @@ using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
 using ClosedXML.Excel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using eneBridge.Wpf.Core.Models;
 using eneBridge.Wpf.Core.Services;
+using eneBridge.Wpf.Services;
 
 namespace eneBridge.Wpf.ViewModels;
 
@@ -15,10 +17,12 @@ public partial class MainViewModel : ObservableObject
     private readonly ExcelReaderService _excelReaderService;
     private readonly DbfExportService _dbfExportService;
     private readonly DbfReaderService _dbfReaderService;
+    private readonly DbfSafetyBackupService _dbfSafetyBackupService;
     private readonly SettingsService _settingsService;
     private readonly RunHistoryService _runHistoryService;
     private readonly FileLogger _fileLogger;
     private readonly ExcelSourceStagingService _excelSourceStagingService;
+    private readonly AceEngineGuardService _aceEngineGuardService;
     private readonly string _appBaseDirectory;
 
     private StageReadResult? _icmasteReadResult;
@@ -65,6 +69,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _showAllColumns;
 
+    /// <summary>
+    /// Set once per session by RunAceEngineHealthCheckAsync. Starts true (optimistic) so the app
+    /// isn't blocked while the startup check runs; ConfirmExportCommand is gated on this so a
+    /// broken ACE driver disables Confirm & Export instead of crashing it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _aceEngineHealthy = true;
+
+    [ObservableProperty]
+    private string _aceEngineStatusText = string.Empty;
+
     public ObservableCollection<RunHistoryEntry> RunHistory { get; } = [];
     public ObservableCollection<string> LogLines { get; } = [];
 
@@ -75,19 +90,23 @@ public partial class MainViewModel : ObservableObject
         ExcelReaderService excelReaderService,
         DbfExportService dbfExportService,
         DbfReaderService dbfReaderService,
+        DbfSafetyBackupService dbfSafetyBackupService,
         SettingsService settingsService,
         RunHistoryService runHistoryService,
         FileLogger fileLogger,
         ExcelSourceStagingService excelSourceStagingService,
+        AceEngineGuardService aceEngineGuardService,
         string appBaseDirectory)
     {
         _excelReaderService = excelReaderService;
         _dbfExportService = dbfExportService;
         _dbfReaderService = dbfReaderService;
+        _dbfSafetyBackupService = dbfSafetyBackupService;
         _settingsService = settingsService;
         _runHistoryService = runHistoryService;
         _fileLogger = fileLogger;
         _excelSourceStagingService = excelSourceStagingService;
+        _aceEngineGuardService = aceEngineGuardService;
         _appBaseDirectory = appBaseDirectory;
     }
 
@@ -102,6 +121,66 @@ public partial class MainViewModel : ObservableObject
         {
             RunHistory.Add(entry);
         }
+    }
+
+    /// <summary>
+    /// Runs once per app session (called once from App.xaml.cs after the window is shown). Spawns
+    /// the disposable self-test child process; on failure, disables Confirm & Export and offers to
+    /// repair. Never throws — AceEngineGuardService.CheckHealthAsync catches everything itself.
+    /// </summary>
+    public async Task RunAceEngineHealthCheckAsync()
+    {
+        var healthy = await _aceEngineGuardService.CheckHealthAsync();
+        SetAceEngineHealth(healthy);
+
+        if (!healthy)
+        {
+            PromptToRepairAceEngine();
+        }
+    }
+
+    private void SetAceEngineHealth(bool healthy)
+    {
+        AceEngineHealthy = healthy;
+        AceEngineStatusText = healthy
+            ? string.Empty
+            : "Access Database Engine isn't working correctly — Confirm & Export is disabled until this is fixed.";
+        ConfirmExportCommand.NotifyCanExecuteChanged();
+    }
+
+    private void PromptToRepairAceEngine()
+    {
+        var result = MessageBox.Show(
+            "eneBridge's Access Database Engine isn't working correctly, so Confirm & Export has " +
+            "been disabled to avoid a crash.\n\n" +
+            "This usually means the standalone Access Database Engine component isn't properly " +
+            "installed. Would you like eneBridge to try fixing this now? " +
+            "(This will prompt for administrator permission.)",
+            "eneBridge - Access Database Engine Problem",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _ = RepairAceEngineAsync();
+    }
+
+    private async Task RepairAceEngineAsync()
+    {
+        var fixedNow = await _aceEngineGuardService.TryRepairAsync();
+        SetAceEngineHealth(fixedNow);
+
+        MessageBox.Show(
+            fixedNow
+                ? "Fixed! Confirm & Export is now enabled."
+                : "The repair attempt didn't fix the problem. Confirm & Export will stay disabled — " +
+                  "please check your Office installation or contact support.",
+            "eneBridge - Access Database Engine",
+            MessageBoxButton.OK,
+            fixedNow ? MessageBoxImage.Information : MessageBoxImage.Error);
     }
 
     [RelayCommand]
@@ -240,7 +319,7 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanExport() => !IsRunning && _icmasteReadResult is not null && _ictraneReadResult is not null;
+    private bool CanExport() => !IsRunning && AceEngineHealthy && _icmasteReadResult is not null && _ictraneReadResult is not null;
 
     /// <summary>Writes the DBF files from the read results Preview already produced.</summary>
     [RelayCommand(CanExecute = nameof(CanExport))]
