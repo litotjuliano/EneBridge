@@ -29,7 +29,9 @@ dotnet build "src/eneBridge.Wpf.slnx"
 # installed/registered on the machine, since several tests round-trip through real .dbf files).
 # An unfiltered run can abort partway through with a native AccessViolationException in
 # ComObject.Finalize -- a pre-existing ACE driver instability (see "Known reliability risk" in
-# Current status below), not a real test failure. Filter to one class/test to avoid it.
+# Current status below), not a real test failure. Filtering to a single class/test reduces how
+# often this happens but doesn't eliminate it: DbfReaderServiceTests.Read_TableDoesNotExist_
+# ReturnsFailureWithErrorMessage alone still triggers it intermittently (roughly half the time).
 dotnet test "tests/eneBridge.Wpf.Core.Tests/eneBridge.Wpf.Core.Tests.csproj"
 
 # Run a single test
@@ -182,9 +184,12 @@ picked path directly rather than blocking the user.
 
 ## Current status
 
-Core services and the WPF UI are implemented; all 64 tests pass when run individually or by class
-(an unfiltered `dotnet test` run can abort partway through on the pre-existing ACE driver
-instability described just below — not a real regression), including a real DBF round-trip
+Core services and the WPF UI are implemented; 63 of 64 tests pass reliably (an unfiltered
+`dotnet test` run can additionally abort partway through on the pre-existing ACE driver
+instability described just below — not a real regression). The one exception,
+`DbfReaderServiceTests.Read_TableDoesNotExist_ReturnsFailureWithErrorMessage`, triggers that same
+instability intermittently even run alone (see "Known reliability risk" below) — its assertion is
+correct when the process survives, it just doesn't always survive. Also included: a real DBF round-trip
 through the actual OleDb/ACE provider (`DbfExportServiceTests`) and full-pipeline verification
 against the real sample workbook (`tests/eneBridge.Wpf.Core.Tests/Fixtures/data.xlsx`) (icmaste: 110
 rows read → 3 written; ictrane: 110 rows read → 110 written). The running app has been manually driven end-to-end (path selection, Preview, Confirm &
