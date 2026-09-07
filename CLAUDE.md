@@ -121,7 +121,7 @@ was a latent bug — harmless today since no current column name needs sanitizin
 guard against future schema edits).
 
 **DBF export crash prevention**: four independent layers guard against the ACE OleDb driver's
-native-crash risk described above and the incident that surfaced it (`Microsoft.ACE.OLEDB.12.0`
+native-crash risk (see "Known reliability risk" under Current status, below) and the incident that surfaced it (`Microsoft.ACE.OLEDB.12.0`
 silently resolving to Office Click-to-Run's own sandboxed `ACEOLEDB.DLL` instead of the standalone
 redistributable — see `docs/superpowers/specs/2026-09-07-dbf-export-crash-prevention-design.md`
 for the full incident writeup). `DbfSafetyBackupService` copies `icmaste.dbf`/`ictrane.dbf` (plus
