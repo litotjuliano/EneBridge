@@ -89,9 +89,12 @@
                     </GroupBox>
 
                     <!-- Run panel -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button Content="Preview" Command="{Binding PreviewCommand}" Padding="24,6" FontWeight="Bold" MinWidth="100" Margin="0,0,8,0"/>
-                        <Button Content="Confirm &amp; Export" Command="{Binding ConfirmExportCommand}" Padding="24,6" FontWeight="Bold" MinWidth="140"/>
+                    <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Preview" Command="{Binding PreviewCommand}" Padding="24,6" FontWeight="Bold" MinWidth="100" Margin="0,0,8,0"/>
+                            <Button Content="Confirm &amp; Export" Command="{Binding ConfirmExportCommand}" Padding="24,6" FontWeight="Bold" MinWidth="140"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding AceEngineStatusText}" Foreground="DarkRed" TextWrapping="Wrap" Margin="0,4,0,0"/>
                     </StackPanel>
 
                     <!-- Progress panel -->

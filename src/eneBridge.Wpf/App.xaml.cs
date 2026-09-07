@@ -1,5 +1,6 @@
 using System.Windows;
 using eneBridge.Wpf.Core.Services;
+using eneBridge.Wpf.Services;
 using eneBridge.Wpf.ViewModels;
 
 namespace eneBridge.Wpf;
@@ -14,29 +15,47 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        if (AceEngineGuardService.IsSelfTestRequest(e.Args))
+        {
+            // Disposable child-process mode (see AceEngineGuardService): perform the ACE-driver
+            // round-trip check and exit immediately, with no window and no normal startup path.
+            // A native AccessViolationException from a broken driver kills only this process.
+            AceEngineGuardService.RunSelfTestAndExit();
+            return;
+        }
+
         var fileLogger = new FileLogger();
         RegisterGlobalExceptionHandlers(fileLogger);
 
         var excelReaderService = new ExcelReaderService();
         var dbfExportService = new DbfExportService(fileLogger);
         var dbfReaderService = new DbfReaderService(fileLogger);
+        var dbfSafetyBackupService = new DbfSafetyBackupService(fileLogger);
         var settingsService = new SettingsService(AppContext.BaseDirectory);
         var runHistoryService = new RunHistoryService();
         var excelSourceStagingService = new ExcelSourceStagingService();
+        var aceEngineGuardService = new AceEngineGuardService(fileLogger, AppContext.BaseDirectory);
 
         var mainViewModel = new MainViewModel(
             excelReaderService,
             dbfExportService,
             dbfReaderService,
+            dbfSafetyBackupService,
             settingsService,
             runHistoryService,
             fileLogger,
             excelSourceStagingService,
+            aceEngineGuardService,
             AppContext.BaseDirectory);
         mainViewModel.Initialize();
 
         var mainWindow = new MainWindow { DataContext = mainViewModel };
         mainWindow.Show();
+
+        // Fire-and-forget: runs once per session, doesn't block the window from appearing.
+        // AceEngineGuardService.CheckHealthAsync never throws, so this can't produce an
+        // unobserved task exception.
+        _ = mainViewModel.RunAceEngineHealthCheckAsync();
     }
 
     /// <summary>
@@ -44,7 +63,8 @@ public partial class App : Application
     /// the app alive for exceptions on the UI thread (matches this project's "nothing should ever
     /// crash the app" goal). Cannot catch a native AccessViolationException from the ACE OleDb
     /// driver (see DbfExportService) — that class of fault is fatal by design in modern .NET and
-    /// bypasses all of these handlers, which is why DbfExportService logs its own checkpoints.
+    /// bypasses all of these handlers, which is why DbfExportService logs its own checkpoints and
+    /// why the startup self-test (AceEngineGuardService) runs in its own disposable process.
     /// </summary>
     private static void RegisterGlobalExceptionHandlers(FileLogger fileLogger)
     {

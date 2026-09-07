@@ -25,8 +25,13 @@ data preview, run history, real error reporting instead of the original's silent
 # Build everything
 dotnet build "src/eneBridge.Wpf.slnx"
 
-# Run all tests (56 tests; requires the Access Database Engine OleDb provider to be
-# installed/registered on the machine, since several tests round-trip through real .dbf files)
+# Run all tests (64 tests; requires the Access Database Engine OleDb provider to be
+# installed/registered on the machine, since several tests round-trip through real .dbf files).
+# An unfiltered run can abort partway through with a native AccessViolationException in
+# ComObject.Finalize -- a pre-existing ACE driver instability (see "Known reliability risk" in
+# Current status below), not a real test failure. Filtering to a single class/test reduces how
+# often this happens but doesn't eliminate it: DbfReaderServiceTests.Read_TableDoesNotExist_
+# ReturnsFailureWithErrorMessage alone still triggers it intermittently (roughly half the time).
 dotnet test "tests/eneBridge.Wpf.Core.Tests/eneBridge.Wpf.Core.Tests.csproj"
 
 # Run a single test
@@ -120,6 +125,28 @@ limit) before a fresh file is created. DBF field names are limited to 10 chars a
 was a latent bug — harmless today since no current column name needs sanitizing, but fixed here to
 guard against future schema edits).
 
+**DBF export crash prevention**: four independent layers guard against the ACE OleDb driver's
+native-crash risk (see "Known reliability risk" under Current status, below) and the incident that surfaced it (`Microsoft.ACE.OLEDB.12.0`
+silently resolving to Office Click-to-Run's own sandboxed `ACEOLEDB.DLL` instead of the standalone
+redistributable — see `docs/superpowers/specs/2026-09-07-dbf-export-crash-prevention-design.md`
+for the full incident writeup). `DbfSafetyBackupService` copies `icmaste.dbf`/`ictrane.dbf` (plus
+`.FPT` companion) to `%AppData%\eneBridge\Backups\<table>\` before anything else runs in
+`ConfirmExportAsync` — plain `File.Copy`, independent of OleDb, so it works even if the driver
+itself is broken. `AceEngineGuardService` spawns `eneBridge.Wpf.exe --selftest-ace` as a disposable
+child process once per session (via `AceEngineSelfTestService`, a real DBF round-trip through a
+throwaway table) so a native crash from a broken driver only kills that child, never the app;
+`MainViewModel.CanExport` is gated on the result, with a "Fix it now" repair flow that re-runs the
+bundled `accessdatabaseengine_X64.exe` elevated. `MainViewModel.ConfirmTablesReadable` warns
+(Continue/Cancel) if either table can't be read before the export's own backup-rename runs —
+deliberately checked via plain file I/O (`Directory.Exists`/`File.Exists`/a shared-read
+`FileStream` probe) rather than `DbfReaderService.Read`, since a real OleDb `SELECT` against a
+nonexistent table was found to intermittently crash the process with this same native-crash
+signature even on an otherwise-healthy driver (see "Known reliability risk" below) — the check is
+OleDb-free for the same reason `DbfSafetyBackupService` is.
+`installer/eneBridge.iss`'s `IsAccessDatabaseEngineInstalled` now resolves the ACE provider's
+actual bound DLL path (not just registry-key existence) so it correctly detects and fixes the
+Office Click-to-Run case instead of silently skipping the real fix.
+
 **Error handling**: nothing should ever crash the app or fail silently (the original did both,
 depending on which stage failed — see the git history / design notes for details if needed). Excel
 open failures and column-count validation failures are fatal for a stage; per-row parse/blank-field
@@ -157,7 +184,12 @@ picked path directly rather than blocking the user.
 
 ## Current status
 
-Core services and the WPF UI are implemented; all 56 tests pass, including a real DBF round-trip
+Core services and the WPF UI are implemented; 63 of 64 tests pass reliably (an unfiltered
+`dotnet test` run can additionally abort partway through on the pre-existing ACE driver
+instability described just below — not a real regression). The one exception,
+`DbfReaderServiceTests.Read_TableDoesNotExist_ReturnsFailureWithErrorMessage`, triggers that same
+instability intermittently even run alone (see "Known reliability risk" below) — its assertion is
+correct when the process survives, it just doesn't always survive. Also included: a real DBF round-trip
 through the actual OleDb/ACE provider (`DbfExportServiceTests`) and full-pipeline verification
 against the real sample workbook (`tests/eneBridge.Wpf.Core.Tests/Fixtures/data.xlsx`) (icmaste: 110
 rows read → 3 written; ictrane: 110 rows read → 110 written). The running app has been manually driven end-to-end (path selection, Preview, Confirm &
@@ -178,4 +210,16 @@ another OleDb connection in-process, not something caused by test code. No test 
 in-process (it isn't safe to), and no production fix has been attempted yet — flagged here so it
 isn't lost. If a real row fails during a run, the *other* stage's export in the same run could be at
 risk of crashing the app outright instead of failing gracefully, which would undermine this
-project's "nothing should ever crash the app" goal.
+project's "nothing should ever crash the app" goal. Separately, a distinct and more common trigger
+for this same crash class — the ACE OleDb provider resolving to Office Click-to-Run's sandboxed
+DLL instead of the standalone redistributable — was found and mitigated (see "DBF export crash
+prevention" above). The underlying driver instability itself turned out to be broader than
+"per-row INSERT + reused connection", though: a single failed `SELECT` against a table that
+doesn't exist yet (`DbfReaderService.Read`, no INSERT, no connection reuse involved) was
+independently confirmed to trigger the same native crash on this machine, intermittently, even
+with an otherwise-healthy driver — `DbfReaderServiceTests.Read_TableDoesNotExist_ReturnsFailureWithErrorMessage`
+reproduces it in isolation (crashed 2 of 3 runs). Because of this, `MainViewModel.ConfirmTablesReadable`
+(see "DBF export crash prevention" above) deliberately avoids `DbfReaderService.Read` entirely,
+using plain file I/O instead. `VerifyDbfAsync`'s own post-export read-back still calls
+`DbfReaderService.Read` and carries this same pre-existing exposure — untouched by this work,
+flagged here for whoever picks it up next.

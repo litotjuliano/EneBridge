@@ -2,11 +2,13 @@ using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
 using ClosedXML.Excel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using eneBridge.Wpf.Core.Models;
 using eneBridge.Wpf.Core.Services;
+using eneBridge.Wpf.Services;
 
 namespace eneBridge.Wpf.ViewModels;
 
@@ -15,10 +17,12 @@ public partial class MainViewModel : ObservableObject
     private readonly ExcelReaderService _excelReaderService;
     private readonly DbfExportService _dbfExportService;
     private readonly DbfReaderService _dbfReaderService;
+    private readonly DbfSafetyBackupService _dbfSafetyBackupService;
     private readonly SettingsService _settingsService;
     private readonly RunHistoryService _runHistoryService;
     private readonly FileLogger _fileLogger;
     private readonly ExcelSourceStagingService _excelSourceStagingService;
+    private readonly AceEngineGuardService _aceEngineGuardService;
     private readonly string _appBaseDirectory;
 
     private StageReadResult? _icmasteReadResult;
@@ -65,6 +69,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _showAllColumns;
 
+    /// <summary>
+    /// Set once per session by RunAceEngineHealthCheckAsync. Starts true (optimistic) so the app
+    /// isn't blocked while the startup check runs; ConfirmExportCommand is gated on this so a
+    /// broken ACE driver disables Confirm & Export instead of crashing it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _aceEngineHealthy = true;
+
+    [ObservableProperty]
+    private string _aceEngineStatusText = string.Empty;
+
     public ObservableCollection<RunHistoryEntry> RunHistory { get; } = [];
     public ObservableCollection<string> LogLines { get; } = [];
 
@@ -75,19 +90,23 @@ public partial class MainViewModel : ObservableObject
         ExcelReaderService excelReaderService,
         DbfExportService dbfExportService,
         DbfReaderService dbfReaderService,
+        DbfSafetyBackupService dbfSafetyBackupService,
         SettingsService settingsService,
         RunHistoryService runHistoryService,
         FileLogger fileLogger,
         ExcelSourceStagingService excelSourceStagingService,
+        AceEngineGuardService aceEngineGuardService,
         string appBaseDirectory)
     {
         _excelReaderService = excelReaderService;
         _dbfExportService = dbfExportService;
         _dbfReaderService = dbfReaderService;
+        _dbfSafetyBackupService = dbfSafetyBackupService;
         _settingsService = settingsService;
         _runHistoryService = runHistoryService;
         _fileLogger = fileLogger;
         _excelSourceStagingService = excelSourceStagingService;
+        _aceEngineGuardService = aceEngineGuardService;
         _appBaseDirectory = appBaseDirectory;
     }
 
@@ -101,6 +120,138 @@ public partial class MainViewModel : ObservableObject
         foreach (var entry in _runHistoryService.LoadAll().AsEnumerable().Reverse())
         {
             RunHistory.Add(entry);
+        }
+    }
+
+    /// <summary>
+    /// Runs once per app session (called once from App.xaml.cs after the window is shown). Spawns
+    /// the disposable self-test child process; on failure, disables Confirm & Export and offers to
+    /// repair. Never throws — AceEngineGuardService.CheckHealthAsync catches everything itself.
+    /// </summary>
+    public async Task RunAceEngineHealthCheckAsync()
+    {
+        var healthy = await _aceEngineGuardService.CheckHealthAsync();
+        SetAceEngineHealth(healthy);
+
+        if (!healthy)
+        {
+            PromptToRepairAceEngine();
+        }
+    }
+
+    private void SetAceEngineHealth(bool healthy)
+    {
+        AceEngineHealthy = healthy;
+        AceEngineStatusText = healthy
+            ? string.Empty
+            : "Access Database Engine isn't working correctly — Confirm & Export is disabled until this is fixed.";
+        ConfirmExportCommand.NotifyCanExecuteChanged();
+    }
+
+    private void PromptToRepairAceEngine()
+    {
+        var result = MessageBox.Show(
+            "eneBridge's Access Database Engine isn't working correctly, so Confirm & Export has " +
+            "been disabled to avoid a crash.\n\n" +
+            "This usually means the standalone Access Database Engine component isn't properly " +
+            "installed. Would you like eneBridge to try fixing this now? " +
+            "(This will prompt for administrator permission.)",
+            "eneBridge - Access Database Engine Problem",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _ = RepairAceEngineAsync();
+    }
+
+    private async Task RepairAceEngineAsync()
+    {
+        var fixedNow = await _aceEngineGuardService.TryRepairAsync();
+        SetAceEngineHealth(fixedNow);
+
+        MessageBox.Show(
+            fixedNow
+                ? "Fixed! Confirm & Export is now enabled."
+                : "The repair attempt didn't fix the problem. Confirm & Export will stay disabled — " +
+                  "please check your Office installation or contact support.",
+            "eneBridge - Access Database Engine",
+            MessageBoxButton.OK,
+            fixedNow ? MessageBoxImage.Information : MessageBoxImage.Error);
+    }
+
+    /// <summary>
+    /// Warns (with a Continue/Cancel choice) if either table can't currently be read — covers
+    /// "file doesn't exist", "table locked by EMAS", and "folder unreachable" alike. Deliberately
+    /// checks via the filesystem only (File.Exists/Directory.Exists/a shared-read FileStream probe)
+    /// rather than DbfReaderService.Read: a real OleDb SELECT against a nonexistent table was found
+    /// to intermittently crash the process with the same native AccessViolationException/
+    /// ComObject.Finalize signature this whole feature exists to guard against — reproduced even on
+    /// a machine with an otherwise-healthy ACE driver (AceEngineHealthy provides no protection
+    /// against this specific trigger, since it's not the Office-Click-to-Run failure mode). Using
+    /// plain file I/O here removes OleDb from this code path entirely, matching
+    /// DbfSafetyBackupService's same discipline. Checks both tables even if the first fails, unless
+    /// the user cancels on the first warning.
+    /// </summary>
+    private bool ConfirmTablesReadable(string dbfFolder)
+    {
+        foreach (var tableName in new[] { IcmasteSchema.TableName, IctraneSchema.TableName })
+        {
+            var (isReadable, errorMessage) = CheckTableFileReadable(dbfFolder, tableName);
+            if (isReadable)
+            {
+                continue;
+            }
+
+            var proceed = MessageBox.Show(
+                $"{tableName}.dbf could not be found or read in '{dbfFolder}':\n{errorMessage}\n\n" +
+                "This is expected on a first-ever export to this folder, but if you expect this " +
+                "table to already exist, something may be wrong (wrong folder selected, the table " +
+                "is locked by EMAS, or a previous export was interrupted).\n\n" +
+                "Continue anyway?",
+                "eneBridge - Table Check",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (proceed != MessageBoxResult.Yes)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Pure filesystem readability probe for one table's .dbf file — no OleDb involved. Opens with
+    /// FileShare.ReadWrite (the most permissive request our own read can make) so this only reports
+    /// "locked" when another process genuinely holds an incompatible lock, not merely because
+    /// something else has the file open for reading too.
+    /// </summary>
+    private static (bool IsReadable, string? ErrorMessage) CheckTableFileReadable(string dbfFolder, string tableName)
+    {
+        if (!Directory.Exists(dbfFolder))
+        {
+            return (false, $"The folder '{dbfFolder}' does not exist or is not reachable.");
+        }
+
+        var dbfPath = Path.Combine(dbfFolder, tableName + ".dbf");
+        if (!File.Exists(dbfPath))
+        {
+            return (false, $"'{tableName}.dbf' does not exist in this folder.");
+        }
+
+        try
+        {
+            using var stream = new FileStream(dbfPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return (true, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (false, ex.Message);
         }
     }
 
@@ -240,7 +391,7 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanExport() => !IsRunning && _icmasteReadResult is not null && _ictraneReadResult is not null;
+    private bool CanExport() => !IsRunning && AceEngineHealthy && _icmasteReadResult is not null && _ictraneReadResult is not null;
 
     /// <summary>Writes the DBF files from the read results Preview already produced.</summary>
     [RelayCommand(CanExecute = nameof(CanExport))]
@@ -263,9 +414,25 @@ public partial class MainViewModel : ObservableObject
         StageExportResult? icmasteExport = null;
         StageExportResult? ictraneExport = null;
         string? fatalError = null;
+        bool cancelledByUser = false;
 
         try
         {
+            await Task.Run(() =>
+            {
+                _dbfSafetyBackupService.BackupIfExists(dbfFolder, IcmasteSchema.TableName);
+                _dbfSafetyBackupService.BackupIfExists(dbfFolder, IctraneSchema.TableName);
+            });
+
+            if (!ConfirmTablesReadable(dbfFolder))
+            {
+                cancelledByUser = true;
+                IcmasteDbfStatusText = "Run Confirm & Export to verify.";
+                IctraneDbfStatusText = "Run Confirm & Export to verify.";
+                AppendLog("Export cancelled by user after the table check.");
+                return;
+            }
+
             icmasteExport = await ExportStageAsync(
                 "icmaste",
                 IcmasteStage,
@@ -294,23 +461,26 @@ public partial class MainViewModel : ObservableObject
         finally
         {
             stopwatch.Stop();
-            var historyEntry = new RunHistoryEntry
+            if (!cancelledByUser)
             {
-                ExcelPath = excelPath,
-                DbfFolder = dbfFolder,
-                IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
-                IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
-                IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
-                IcmasteSuccess = icmasteExport?.Success ?? false,
-                IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
-                IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
-                IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
-                IctraneSuccess = ictraneExport?.Success ?? false,
-                ErrorSummary = fatalError,
-                DurationMs = stopwatch.ElapsedMilliseconds,
-            };
-            _runHistoryService.Append(historyEntry);
-            RunHistory.Insert(0, historyEntry);
+                var historyEntry = new RunHistoryEntry
+                {
+                    ExcelPath = excelPath,
+                    DbfFolder = dbfFolder,
+                    IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
+                    IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
+                    IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
+                    IcmasteSuccess = icmasteExport?.Success ?? false,
+                    IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
+                    IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
+                    IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
+                    IctraneSuccess = ictraneExport?.Success ?? false,
+                    ErrorSummary = fatalError,
+                    DurationMs = stopwatch.ElapsedMilliseconds,
+                };
+                _runHistoryService.Append(historyEntry);
+                RunHistory.Insert(0, historyEntry);
+            }
             IsRunning = false;
             PreviewCommand.NotifyCanExecuteChanged();
             ConfirmExportCommand.NotifyCanExecuteChanged();
