@@ -35,23 +35,59 @@ but never got far enough to recreate it, leaving EMAS's Inventory Control module
 table at all until it was manually restored from that backup. Nothing in the app today would have
 told the user this happened short of noticing EMAS itself breaking.
 
+`icmaste.dbf`/`ictrane.dbf` are EMAS's live Inventory Control tables — real accounting data, not
+disposable output. `icmaste.dbf` surviving this incident at all was only because
+`BackupExistingFile`'s same-folder rename happened to complete before the crash hit. That backup
+lives in the exact same production folder as everything else, though: it's a *rename* (there's a
+window where neither the old nor new file exists at that path), and it depends on that folder/drive
+being fully healthy, same as the live file it's protecting.
+
 ## Goal
 
 Reduce the chance of a repeat of this incident — and make it recoverable/diagnosable in-app if it
-does happen — via three independent, complementary layers. None of them depend on each other;
-each closes a different gap:
+does happen — via four independent, complementary layers. None of them depend on each other; each
+closes a different gap:
 
-1. **Installer**: stop silently skipping the correct engine install on Office machines.
-2. **Runtime self-test**: catch it if the driver breaks anyway (e.g. a later Office update changes
+1. **Safety backup**: before touching either table, copy the current on-disk file to a separate,
+   app-controlled location — independent of the live EMAS folder, and independent of whether the
+   ACE driver even works, since it's a plain filesystem copy.
+2. **Installer**: stop silently skipping the correct engine install on Office machines.
+3. **Runtime self-test**: catch it if the driver breaks anyway (e.g. a later Office update changes
    the shared DLL while eneBridge is already installed), without ever risking the main app process.
-3. **Pre-export table check**: catch folder/path/table-state problems unrelated to the driver
+4. **Pre-export table check**: catch folder/path/table-state problems unrelated to the driver
    itself (wrong folder, a table locked by EMAS, or state left over from a previous interrupted
    export — exactly what happened to `icmaste.dbf` in this incident) before the irreversible
    backup-rename step runs.
 
 ## Design
 
-### 1. Installer detection fix
+### 1. Safety backup to a separate app-controlled folder
+
+At the very start of `ConfirmExportAsync`, before anything else runs (before the pre-export table
+check in part 4, before either `ExportStageAsync` call) — for each of `icmaste`/`ictrane`, if
+`<dbfFolder>\<tableName>.dbf` currently exists, copy it, plus `<dbfFolder>\<tableName>.FPT` if that
+also exists (the memo companion file the ACE dBASE driver creates alongside a table; present today
+for `icmaste`), to `%AppData%\eneBridge\Backups\<tableName>\<tableName>_<yyyyMMddHHmmss>.dbf`
+(and `.FPT`) — same timestamp format `BackupExistingFile` already uses elsewhere. This is a plain
+`File.Copy`, deliberately independent of `System.Data.OleDb`/the ACE driver entirely, so it works
+even in the exact scenario that caused this incident (the driver itself being broken) and even if
+`AceEngineHealthy` (part 3) is `false`. Only files with the table's exact base name are copied —
+not EMAS's own same-prefixed index files (e.g. `icmastei.CDX`, `icmasteie.DBF`), which this app
+doesn't own or manage.
+
+This runs in addition to, not instead of, the existing same-folder rename in
+`DbfExportService.BackupExistingFile` (still required — `CREATE TABLE` needs the filename free).
+The two are intentionally redundant and independent: one lives next to the live data for
+convenience, the other lives in a location with no dependency on the EMAS folder, drive, or the ACE
+driver being healthy at all. Matches the project's existing "never delete, no retention limit"
+backup policy (`DbfExportService`, `ExcelSourceStagingService`) — these files are small, so
+unbounded retention isn't a practical disk-space concern.
+
+If the source file can't be copied (e.g. genuinely locked), log the failure via `FileLogger` and
+continue with the rest of `ConfirmExportAsync` as today — this is an extra safety net, not a new
+way for a normal export to be blocked.
+
+### 2. Installer detection fix
 
 `IsAccessDatabaseEngineInstalled` changes from a key-existence check to resolving what DLL the
 provider actually points at:
@@ -74,9 +110,9 @@ provider actually points at:
   `[Run]`, so the permanent path already exists by the time it's invoked).
 
 This also gives the app a stable, known local path to re-invoke later for the "Fix it now" repair
-flow in part 2.
+flow in part 3.
 
-### 2. Startup self-test (child process, once per session)
+### 3. Startup self-test (child process, once per session)
 
 **Core, testable logic** — a new `AceEngineSelfTestService` in `eneBridge.Wpf.Core`: builds a
 throwaway single-column `DataTable` (one row, one string column — not the real 151/80-column
@@ -119,10 +155,10 @@ All of this is logged via `FileLogger` (self-test start/result, repair attempt/r
 reason the existing per-row/per-connection checkpoints are: if something still goes wrong, the last
 logged line should say what.
 
-### 3. Pre-export table check
+### 4. Pre-export table check
 
-At the very start of `ConfirmExportAsync`, before either `ExportStageAsync` call (i.e. before
-`BackupExistingFile` ever renames anything), call `_dbfReaderService.Read` for both
+Runs immediately after the safety backup (part 1), still before either `ExportStageAsync` call
+(i.e. before `BackupExistingFile` ever renames anything): call `_dbfReaderService.Read` for both
 `IcmasteSchema.TableName` and `IctraneSchema.TableName` against the target `dbfFolder`. This only
 runs once the driver itself is already known-good (`AceEngineHealthy` gates `CanExport()`), so it's
 safe to do in-process.
@@ -153,6 +189,10 @@ ends in either a logged, actionable dialog or a safe abort, never an unhandled s
 
 ## Testing
 
+- The safety-backup copy logic (part 1) is plain file I/O against a scratch folder — fully
+  unit-testable with no ACE provider involved: cover the table-exists (copies `.dbf` and, if
+  present, `.FPT`, with the expected timestamped name), table-missing (no-op, no error), and
+  companion-file-absent cases.
 - `AceEngineSelfTestService`'s round-trip logic is unit-testable the same way
   `DbfExportServiceTests`' existing round-trip test is (real ACE provider required, same as all
   DBF-touching tests today) — add a passing-case test.
