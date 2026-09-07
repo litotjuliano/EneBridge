@@ -183,6 +183,42 @@ public partial class MainViewModel : ObservableObject
             fixedNow ? MessageBoxImage.Information : MessageBoxImage.Error);
     }
 
+    /// <summary>
+    /// Warns (with a Continue/Cancel choice) if either table can't currently be read — covers
+    /// "file doesn't exist", "table locked by EMAS", and "folder unreachable" alike, since
+    /// DbfReaderService.Read already catches all three uniformly. Runs only once AceEngineHealthy
+    /// is known-good (CanExport already requires this), so it's safe to do in-process. Checks both
+    /// tables even if the first fails, unless the user cancels on the first warning.
+    /// </summary>
+    private async Task<bool> ConfirmTablesReadableAsync(string dbfFolder)
+    {
+        foreach (var tableName in new[] { IcmasteSchema.TableName, IctraneSchema.TableName })
+        {
+            var readResult = await Task.Run(() => _dbfReaderService.Read(dbfFolder, tableName));
+            if (readResult.Success)
+            {
+                continue;
+            }
+
+            var proceed = MessageBox.Show(
+                $"{tableName}.dbf could not be found or read in '{dbfFolder}':\n{readResult.ErrorMessage}\n\n" +
+                "This is expected on a first-ever export to this folder, but if you expect this " +
+                "table to already exist, something may be wrong (wrong folder selected, the table " +
+                "is locked by EMAS, or a previous export was interrupted).\n\n" +
+                "Continue anyway?",
+                "eneBridge - Table Check",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (proceed != MessageBoxResult.Yes)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     [RelayCommand]
     private void BrowseExcel()
     {
@@ -342,9 +378,23 @@ public partial class MainViewModel : ObservableObject
         StageExportResult? icmasteExport = null;
         StageExportResult? ictraneExport = null;
         string? fatalError = null;
+        bool cancelledByUser = false;
 
         try
         {
+            await Task.Run(() =>
+            {
+                _dbfSafetyBackupService.BackupIfExists(dbfFolder, IcmasteSchema.TableName);
+                _dbfSafetyBackupService.BackupIfExists(dbfFolder, IctraneSchema.TableName);
+            });
+
+            if (!await ConfirmTablesReadableAsync(dbfFolder))
+            {
+                cancelledByUser = true;
+                AppendLog("Export cancelled by user after the table check.");
+                return;
+            }
+
             icmasteExport = await ExportStageAsync(
                 "icmaste",
                 IcmasteStage,
@@ -373,23 +423,26 @@ public partial class MainViewModel : ObservableObject
         finally
         {
             stopwatch.Stop();
-            var historyEntry = new RunHistoryEntry
+            if (!cancelledByUser)
             {
-                ExcelPath = excelPath,
-                DbfFolder = dbfFolder,
-                IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
-                IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
-                IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
-                IcmasteSuccess = icmasteExport?.Success ?? false,
-                IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
-                IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
-                IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
-                IctraneSuccess = ictraneExport?.Success ?? false,
-                ErrorSummary = fatalError,
-                DurationMs = stopwatch.ElapsedMilliseconds,
-            };
-            _runHistoryService.Append(historyEntry);
-            RunHistory.Insert(0, historyEntry);
+                var historyEntry = new RunHistoryEntry
+                {
+                    ExcelPath = excelPath,
+                    DbfFolder = dbfFolder,
+                    IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
+                    IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
+                    IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
+                    IcmasteSuccess = icmasteExport?.Success ?? false,
+                    IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
+                    IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
+                    IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
+                    IctraneSuccess = ictraneExport?.Success ?? false,
+                    ErrorSummary = fatalError,
+                    DurationMs = stopwatch.ElapsedMilliseconds,
+                };
+                _runHistoryService.Append(historyEntry);
+                RunHistory.Insert(0, historyEntry);
+            }
             IsRunning = false;
             PreviewCommand.NotifyCanExecuteChanged();
             ConfirmExportCommand.NotifyCanExecuteChanged();
