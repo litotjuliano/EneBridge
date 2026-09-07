@@ -391,6 +391,8 @@ public partial class MainViewModel : ObservableObject
             if (!await ConfirmTablesReadableAsync(dbfFolder))
             {
                 cancelledByUser = true;
+                IcmasteDbfStatusText = "Run Confirm & Export to verify.";
+                IctraneDbfStatusText = "Run Confirm & Export to verify.";
                 AppendLog("Export cancelled by user after the table check.");
                 return;
             }
