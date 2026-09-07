@@ -92,7 +92,11 @@ begin
     redistributable's copy (this installer's own accessdatabaseengine_X64.exe) counts as properly
     installed here. }
   DllPath := GetAceInprocServerPath();
-  Result := (DllPath <> '') and (Pos('\root\VFS\', DllPath) = 0);
+  { Lowercase both sides before comparing: Pos is case-sensitive, and the VFS path's casing isn't
+    a documented Microsoft contract -- failing to match here would fail OPEN (report "installed"
+    for a still-broken Click-to-Run binding), the same silent-skip failure mode this fix exists to
+    close. }
+  Result := (DllPath <> '') and (Pos('\root\vfs\', Lowercase(DllPath)) = 0);
 end;
 
 function IsDotNet8DesktopRuntimeInstalled(): Boolean;
