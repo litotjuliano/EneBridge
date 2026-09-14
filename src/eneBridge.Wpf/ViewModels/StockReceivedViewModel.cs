@@ -27,6 +27,7 @@ public partial class StockReceivedViewModel : ObservableObject
     private readonly RunHistoryService _runHistoryService;
     private readonly FileLogger _fileLogger;
     private readonly ExcelSourceStagingService _excelSourceStagingService;
+    private readonly ExportGateService _exportGateService;
     private readonly string _appBaseDirectory;
 
     private StageReadResult? _icmasteReadResult;
@@ -94,6 +95,7 @@ public partial class StockReceivedViewModel : ObservableObject
         RunHistoryService runHistoryService,
         FileLogger fileLogger,
         ExcelSourceStagingService excelSourceStagingService,
+        ExportGateService exportGateService,
         string appBaseDirectory)
     {
         _excelReaderService = excelReaderService;
@@ -104,7 +106,10 @@ public partial class StockReceivedViewModel : ObservableObject
         _runHistoryService = runHistoryService;
         _fileLogger = fileLogger;
         _excelSourceStagingService = excelSourceStagingService;
+        _exportGateService = exportGateService;
         _appBaseDirectory = appBaseDirectory;
+
+        _exportGateService.StateChanged += () => ConfirmExportCommand.NotifyCanExecuteChanged();
     }
 
     public void Initialize()
@@ -264,12 +269,18 @@ public partial class StockReceivedViewModel : ObservableObject
         }
     }
 
-    private bool CanExport() => !IsRunning && AceEngineHealthy && _icmasteReadResult is not null && _ictraneReadResult is not null;
+    private bool CanExport() => !IsRunning && AceEngineHealthy && _icmasteReadResult is not null && _ictraneReadResult is not null && !_exportGateService.IsExportInProgress;
 
     /// <summary>Writes the DBF files from the read results Preview already produced.</summary>
     [RelayCommand(CanExecute = nameof(CanExport))]
     private async Task ConfirmExportAsync()
     {
+        if (!_exportGateService.TryBeginExport())
+        {
+            AppendLog("Cannot export: the Invoice tab is currently exporting. Please wait for it to finish and try again.");
+            return;
+        }
+
         IsRunning = true;
         PreviewCommand.NotifyCanExecuteChanged();
         ConfirmExportCommand.NotifyCanExecuteChanged();
@@ -359,6 +370,7 @@ public partial class StockReceivedViewModel : ObservableObject
                 RunHistory.Insert(0, historyEntry);
             }
             IsRunning = false;
+            _exportGateService.EndExport();
             PreviewCommand.NotifyCanExecuteChanged();
             ConfirmExportCommand.NotifyCanExecuteChanged();
         }

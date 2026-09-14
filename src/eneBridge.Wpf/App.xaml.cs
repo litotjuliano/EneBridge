@@ -36,6 +36,7 @@ public partial class App : Application
         var stockReceivedRunHistoryService = new RunHistoryService(fileName: "stockReceivedRunHistory.json");
         var excelSourceStagingService = new ExcelSourceStagingService();
         var aceEngineGuardService = new AceEngineGuardService(fileLogger, AppContext.BaseDirectory);
+        var exportGateService = new ExportGateService();
 
         var stockReceivedViewModel = new StockReceivedViewModel(
             excelReaderService,
@@ -46,6 +47,7 @@ public partial class App : Application
             stockReceivedRunHistoryService,
             fileLogger,
             excelSourceStagingService,
+            exportGateService,
             AppContext.BaseDirectory);
         stockReceivedViewModel.Initialize();
 
@@ -60,6 +62,7 @@ public partial class App : Application
             excelSourceStagingService,
             aceEngineGuardService,
             stockReceivedViewModel,
+            exportGateService,
             AppContext.BaseDirectory);
         mainViewModel.Initialize();
 
