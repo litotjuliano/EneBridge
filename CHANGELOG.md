@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.0.3] - 2026-09-14
+- Stock Received Module
+
 ## [1.0.2] - 2026-09-08
 - icmast and ictran exist validations, excel driver validations
 
