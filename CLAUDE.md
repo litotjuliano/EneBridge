@@ -202,7 +202,15 @@ the cached read results, disabling Confirm & Export until a fresh Preview runs.
 
 **Persistence**: `SettingsService` reads `appsettings.json` (initial default paths, shipped with
 the app) and a separate `%AppData%\eneBridge\settings.json` (last-used paths, user-writable,
-overrides the defaults). `RunHistoryService` persists run history to
+overrides the defaults) — but only for the DBF folder path. `ResolveEffectivePaths`/
+`ResolveEffectiveStockReceivedPaths` deliberately never restore a remembered Excel file path, even
+though `UserSettingsModel.ExcelFilePath`/`StockReceivedExcelFilePath` are still written on every
+Browse (`SaveUserPaths`): a remembered Excel path looks "ready to export" the moment the app opens,
+inviting an accidental re-export of a stale file instead of the user actively picking today's file.
+Both `ExcelFilePath` properties always start blank; `Preview`/`Confirm & Export` stay disabled
+until a fresh Browse. The DBF folder path has no such risk (it rarely changes, and pointing at the
+wrong DBF folder is caught by `DbfWorkflowHelper.ConfirmTablesReadable` anyway), so it's still
+remembered normally. `RunHistoryService` persists run history to
 `%AppData%\eneBridge\runHistory.json`. `FileLogger` writes full exception detail to a rolling log
 file under `%AppData%\eneBridge\logs\`, kept separate from the concise on-screen run history.
 `ExcelSourceStagingService` copies every Excel file picked via Browse into

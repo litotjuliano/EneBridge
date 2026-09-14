@@ -78,13 +78,34 @@ public class SettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void ResolveEffectiveStockReceivedPaths_UserSettingSaved_UsesUserValue()
+    public void ResolveEffectiveStockReceivedPaths_UserSettingSaved_ExcelPathStillEmpty()
     {
         var service = new SettingsService(_appBaseDirectory, _userDataDirectory);
         service.SaveUserSettings(s => s.StockReceivedExcelFilePath = @"C:\my-stock-received.xlsx");
 
         var (excelPath, _) = service.ResolveEffectiveStockReceivedPaths(_appBaseDirectory);
 
-        Assert.Equal(@"C:\my-stock-received.xlsx", excelPath);
+        Assert.Equal(string.Empty, excelPath);
+    }
+
+    [Fact]
+    public void ResolveEffectivePaths_NoUserSettingsSaved_ExcelPathIsEmpty()
+    {
+        var service = new SettingsService(_appBaseDirectory, _userDataDirectory);
+
+        var (excelPath, _) = service.ResolveEffectivePaths(_appBaseDirectory);
+
+        Assert.Equal(string.Empty, excelPath);
+    }
+
+    [Fact]
+    public void ResolveEffectivePaths_UserSettingSaved_ExcelPathStillEmpty()
+    {
+        var service = new SettingsService(_appBaseDirectory, _userDataDirectory);
+        service.SaveUserSettings(s => s.ExcelFilePath = @"C:\my-invoice.xlsx");
+
+        var (excelPath, _) = service.ResolveEffectivePaths(_appBaseDirectory);
+
+        Assert.Equal(string.Empty, excelPath);
     }
 }

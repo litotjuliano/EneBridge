@@ -74,46 +74,42 @@ public sealed class SettingsService
         File.Move(tempPath, _userSettingsPath, overwrite: true);
     }
 
-    /// <summary>User-saved paths win over appsettings.json defaults (which are combined with the app's base directory, same as the original).</summary>
+    /// <summary>
+    /// The DBF folder is remembered across restarts (user-saved wins over the appsettings.json
+    /// default, combined with the app's base directory) -- it rarely changes and isn't a
+    /// data-freshness risk. The Excel file path is deliberately NEVER restored, even though
+    /// UserSettingsModel.ExcelFilePath is still written on every Browse (SaveUserPaths) -- a
+    /// remembered Excel path looks "ready to export" on next launch, inviting an accidental
+    /// re-export of a stale/previous file instead of the user actively picking today's file. The
+    /// field always starts blank; Preview/Confirm &amp; Export stay disabled until a fresh Browse.
+    /// </summary>
     public (string excelPath, string dbfFolder) ResolveEffectivePaths(string appBaseDirectory)
     {
         var defaults = LoadAppDefaults();
         var user = LoadUserSettings();
 
-        string excelPath = !string.IsNullOrWhiteSpace(user?.ExcelFilePath)
-            ? user!.ExcelFilePath!
-            : Path.Combine(appBaseDirectory, defaults.FilePaths.ExcelFilePath);
-
         string dbfFolder = !string.IsNullOrWhiteSpace(user?.DbfFolderPath)
             ? user!.DbfFolderPath!
             : Path.Combine(appBaseDirectory, defaults.FilePaths.DbfFilePath);
 
-        return (excelPath, dbfFolder);
+        return (string.Empty, dbfFolder);
     }
 
     /// <summary>
-    /// Stock Received's own Excel path, resolved independently of Invoice's -- but the SAME DBF
+    /// Stock Received's own Excel path -- always blank on startup, for the same reason
+    /// ResolveEffectivePaths never restores Invoice's (see its doc comment) -- but the SAME DBF
     /// folder Invoice uses, since both workflows now write into the same live tables (see
-    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md). Unlike
-    /// ResolveEffectivePaths, an unset default yields an empty string rather than a combined path
-    /// pointing at the app's own base directory -- no app-shipped default is required, the field
-    /// just starts blank until the user Browses once.
+    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md).
     /// </summary>
     public (string excelPath, string dbfFolder) ResolveEffectiveStockReceivedPaths(string appBaseDirectory)
     {
         var defaults = LoadAppDefaults();
         var user = LoadUserSettings();
 
-        string excelPath = !string.IsNullOrWhiteSpace(user?.StockReceivedExcelFilePath)
-            ? user!.StockReceivedExcelFilePath!
-            : (string.IsNullOrWhiteSpace(defaults.FilePaths.StockReceivedExcelFilePath)
-                ? string.Empty
-                : Path.Combine(appBaseDirectory, defaults.FilePaths.StockReceivedExcelFilePath));
-
         string dbfFolder = !string.IsNullOrWhiteSpace(user?.DbfFolderPath)
             ? user!.DbfFolderPath!
             : Path.Combine(appBaseDirectory, defaults.FilePaths.DbfFilePath);
 
-        return (excelPath, dbfFolder);
+        return (string.Empty, dbfFolder);
     }
 }
