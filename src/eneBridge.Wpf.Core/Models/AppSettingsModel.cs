@@ -9,6 +9,7 @@ public sealed class AppSettingsModel
     {
         public string ExcelFilePath { get; init; } = string.Empty;
         public string DbfFilePath { get; init; } = string.Empty;
+        public string StockReceivedExcelFilePath { get; init; } = string.Empty;
     }
 }
 
@@ -17,4 +18,5 @@ public sealed class UserSettingsModel
 {
     public string? ExcelFilePath { get; set; }
     public string? DbfFolderPath { get; set; }
+    public string? StockReceivedExcelFilePath { get; set; }
 }

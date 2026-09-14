@@ -308,10 +308,10 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveUserPaths()
     {
-        _settingsService.SaveUserSettings(new UserSettingsModel
+        _settingsService.SaveUserSettings(s =>
         {
-            ExcelFilePath = ExcelFilePath,
-            DbfFolderPath = DbfFolderPath
+            s.ExcelFilePath = ExcelFilePath;
+            s.DbfFolderPath = DbfFolderPath;
         });
     }
 

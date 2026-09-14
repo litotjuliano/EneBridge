@@ -57,9 +57,18 @@ public sealed class SettingsService
         }
     }
 
-    public void SaveUserSettings(UserSettingsModel settings)
+    /// <summary>
+    /// Loads whatever is currently persisted (or starts fresh if nothing is saved yet), applies
+    /// `update`, and writes the merged result back. Merge-based rather than replace-based so that
+    /// Invoice and Stock Received -- which each save only the fields they own -- never clobber
+    /// each other's saved paths.
+    /// </summary>
+    public void SaveUserSettings(Action<UserSettingsModel> update)
     {
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
+        var current = LoadUserSettings() ?? new UserSettingsModel();
+        update(current);
+
+        var json = JsonSerializer.Serialize(current, JsonOptions);
         var tempPath = _userSettingsPath + ".tmp";
         File.WriteAllText(tempPath, json);
         File.Move(tempPath, _userSettingsPath, overwrite: true);
@@ -74,6 +83,32 @@ public sealed class SettingsService
         string excelPath = !string.IsNullOrWhiteSpace(user?.ExcelFilePath)
             ? user!.ExcelFilePath!
             : Path.Combine(appBaseDirectory, defaults.FilePaths.ExcelFilePath);
+
+        string dbfFolder = !string.IsNullOrWhiteSpace(user?.DbfFolderPath)
+            ? user!.DbfFolderPath!
+            : Path.Combine(appBaseDirectory, defaults.FilePaths.DbfFilePath);
+
+        return (excelPath, dbfFolder);
+    }
+
+    /// <summary>
+    /// Stock Received's own Excel path, resolved independently of Invoice's -- but the SAME DBF
+    /// folder Invoice uses, since both workflows now write into the same live tables (see
+    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md). Unlike
+    /// ResolveEffectivePaths, an unset default yields an empty string rather than a combined path
+    /// pointing at the app's own base directory -- no app-shipped default is required, the field
+    /// just starts blank until the user Browses once.
+    /// </summary>
+    public (string excelPath, string dbfFolder) ResolveEffectiveStockReceivedPaths(string appBaseDirectory)
+    {
+        var defaults = LoadAppDefaults();
+        var user = LoadUserSettings();
+
+        string excelPath = !string.IsNullOrWhiteSpace(user?.StockReceivedExcelFilePath)
+            ? user!.StockReceivedExcelFilePath!
+            : (string.IsNullOrWhiteSpace(defaults.FilePaths.StockReceivedExcelFilePath)
+                ? string.Empty
+                : Path.Combine(appBaseDirectory, defaults.FilePaths.StockReceivedExcelFilePath));
 
         string dbfFolder = !string.IsNullOrWhiteSpace(user?.DbfFolderPath)
             ? user!.DbfFolderPath!
