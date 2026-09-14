@@ -6,9 +6,10 @@ namespace eneBridge.Wpf.Core.Services;
 /// touches anything. Deliberately independent of System.Data.OleDb/the ACE driver — a plain
 /// File.Copy — so it still works even if the driver itself is broken (the exact scenario that
 /// caused the incident this exists to protect against; see
-/// docs/superpowers/specs/2026-09-07-dbf-export-crash-prevention-design.md). Runs in addition to,
-/// not instead of, DbfExportService.BackupExistingFile's own same-folder rename-on-collision
-/// backup, which is still required since CREATE TABLE needs the filename slot free.
+/// docs/superpowers/specs/2026-09-07-dbf-export-crash-prevention-design.md). Runs independently
+/// of DbfExportService.Export, which no longer does any same-folder rename-on-collision backup of
+/// its own -- Export now appends into the existing table instead of recreating it (see
+/// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md).
 /// </summary>
 public sealed class DbfSafetyBackupService
 {
