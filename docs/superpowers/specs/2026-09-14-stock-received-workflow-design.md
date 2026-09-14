@@ -234,3 +234,10 @@ blank until the user Browses once, same as any other first run). `SettingsServic
 - The `No` column (Excel column A) — confirmed unused, not mapped to anything, safe to ignore.
 - Any retention/cleanup policy for `DbfSafetyBackupService`'s accumulating backup copies — already
   explicitly out of scope per the crash-prevention design, unchanged here.
+- A schema-mismatch guard for `DbfExportService.Export`'s new create-if-missing behavior. Before
+  this design, an existing `.dbf` was always renamed away and recreated fresh on every run, so it
+  could never linger with a stale/mismatched schema. Now that `Export` appends into whatever's
+  already there, a `.dbf` left over from an older app version with a narrower column width could
+  silently truncate data on INSERT with no error. Not addressed here — flagged for a future task
+  if this becomes a real concern (e.g. once the schema has actually changed between shipped
+  versions).

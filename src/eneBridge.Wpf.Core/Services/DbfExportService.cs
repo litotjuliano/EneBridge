@@ -22,9 +22,10 @@ public sealed class DbfExportService
     /// accumulate into the live file across calls, never replacing what's already there (see
     /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md for why: Invoice and
     /// Stock Received both write into the same icmaste.dbf/ictrane.dbf, distinguished by TYPE, so
-    /// neither can be allowed to wipe out the other's rows). A failure opening the connection /
-    /// creating the table is fatal for this stage (Success=false); a failure inserting a single
-    /// row is recorded in RowErrors and the remaining rows still run.
+    /// neither can be allowed to wipe out the other's rows). Do not reintroduce recreate-on-collision
+    /// here: Stock Received's rows depend on surviving across Invoice's runs, and vice versa. A
+    /// failure opening the connection / creating the table is fatal for this stage (Success=false);
+    /// a failure inserting a single row is recorded in RowErrors and the remaining rows still run.
     /// </summary>
     public StageExportResult Export(string dbfFolder, string tableName, DataTable data, IReadOnlyList<DbfColumnDefinition> schema)
     {
