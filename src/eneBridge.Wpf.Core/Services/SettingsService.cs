@@ -78,10 +78,13 @@ public sealed class SettingsService
     /// The DBF folder is remembered across restarts (user-saved wins over the appsettings.json
     /// default, combined with the app's base directory) -- it rarely changes and isn't a
     /// data-freshness risk. The Excel file path is deliberately NEVER restored, even though
-    /// UserSettingsModel.ExcelFilePath is still written on every Browse (SaveUserPaths) -- a
-    /// remembered Excel path looks "ready to export" on next launch, inviting an accidental
-    /// re-export of a stale/previous file instead of the user actively picking today's file. The
-    /// field always starts blank; Preview/Confirm &amp; Export stay disabled until a fresh Browse.
+    /// UserSettingsModel.ExcelFilePath is still written on every Browse (SaveUserPaths, kept for
+    /// forward-compatibility/diagnostics even though nothing reads it back today) -- a remembered
+    /// Excel path looks "ready to export" on next launch, inviting an accidental re-export of a
+    /// stale/previous file instead of the user actively picking today's file. The field always
+    /// starts blank; Preview against a blank path fails gracefully rather than being disabled
+    /// outright, but produces no read results, so Confirm &amp; Export stays disabled until a
+    /// fresh Browse and a successful Preview.
     /// </summary>
     public (string excelPath, string dbfFolder) ResolveEffectivePaths(string appBaseDirectory)
     {
