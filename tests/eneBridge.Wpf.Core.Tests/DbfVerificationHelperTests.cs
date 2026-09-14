@@ -99,4 +99,33 @@ public class DbfVerificationHelperTests : IDisposable
         Assert.False(verified);
         Assert.Contains("export failed", status);
     }
+
+    [Fact]
+    public async Task VerifyDbfDeltaAsync_ActualNewRowsNegative_ReportsFewerRowsMessage()
+    {
+        // Drive the actualNewRows < 0 sub-branch (rows appear to have disappeared since the
+        // "before" count was taken) without needing to actually delete real rows from a DBF: seed
+        // a real export (3 rows, per the fixture), then pass a beforeCount deliberately higher
+        // than the table's actual post-export row count, so readResult.RowCount - beforeCount
+        // computes negative even though the export itself reported success.
+        var excelReader = new ExcelReaderService();
+        var dbfExporter = new DbfExportService();
+        var dbfReader = new DbfReaderService();
+
+        using var workbook = excelReader.OpenWorkbook(FixturePath);
+        var worksheet = workbook.Worksheets.First();
+        var icmasteRead = excelReader.ReadIcmaste(worksheet);
+        dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
+
+        var exportResult = new StageExportResult { Success = true, RowsWritten = 3 };
+
+        string? status = null;
+        bool? verified = null;
+        await DbfVerificationHelper.VerifyDbfDeltaAsync(
+            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", beforeCount: 10, exportResult,
+            _ => { }, s => status = s, v => verified = v);
+
+        Assert.False(verified);
+        Assert.Contains("FEWER", status);
+    }
 }
