@@ -341,98 +341,113 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        IsRunning = true;
-        PreviewCommand.NotifyCanExecuteChanged();
-        ConfirmExportCommand.NotifyCanExecuteChanged();
-        IcmasteDbfPreview = null;
-        IctraneDbfPreview = null;
-        IcmasteDbfStatusText = "Verifying…";
-        IctraneDbfStatusText = "Verifying…";
-        IcmasteDbfVerified = false;
-        IctraneDbfVerified = false;
-
-        string excelPath = ExcelFilePath;
-        string dbfFolder = DbfFolderPath;
-        var stopwatch = Stopwatch.StartNew();
-
-        StageExportResult? icmasteExport = null;
-        StageExportResult? ictraneExport = null;
-        string? fatalError = null;
-        bool cancelledByUser = false;
-
         try
         {
-            await Task.Run(() =>
-            {
-                _dbfSafetyBackupService.BackupIfExists(dbfFolder, IcmasteSchema.TableName);
-                _dbfSafetyBackupService.BackupIfExists(dbfFolder, IctraneSchema.TableName);
-            });
+            IsRunning = true;
+            PreviewCommand.NotifyCanExecuteChanged();
+            ConfirmExportCommand.NotifyCanExecuteChanged();
+            IcmasteDbfPreview = null;
+            IctraneDbfPreview = null;
+            IcmasteDbfStatusText = "Verifying…";
+            IctraneDbfStatusText = "Verifying…";
+            IcmasteDbfVerified = false;
+            IctraneDbfVerified = false;
 
-            if (!DbfWorkflowHelper.ConfirmTablesReadable(dbfFolder))
+            string excelPath = ExcelFilePath;
+            string dbfFolder = DbfFolderPath;
+            var stopwatch = Stopwatch.StartNew();
+
+            StageExportResult? icmasteExport = null;
+            StageExportResult? ictraneExport = null;
+            string? fatalError = null;
+            bool cancelledByUser = false;
+
+            try
             {
-                cancelledByUser = true;
-                IcmasteDbfStatusText = "Run Confirm & Export to verify.";
-                IctraneDbfStatusText = "Run Confirm & Export to verify.";
-                AppendLog("Export cancelled by user after the table check.");
-                return;
+                await Task.Run(() =>
+                {
+                    _dbfSafetyBackupService.BackupIfExists(dbfFolder, IcmasteSchema.TableName);
+                    _dbfSafetyBackupService.BackupIfExists(dbfFolder, IctraneSchema.TableName);
+                });
+
+                if (!DbfWorkflowHelper.ConfirmTablesReadable(dbfFolder))
+                {
+                    cancelledByUser = true;
+                    IcmasteDbfStatusText = "Run Confirm & Export to verify.";
+                    IctraneDbfStatusText = "Run Confirm & Export to verify.";
+                    AppendLog("Export cancelled by user after the table check.");
+                    return;
+                }
+
+                var icmasteBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
+                    _dbfReaderService, dbfFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
+                icmasteExport = await ExportStageAsync(
+                    "icmaste",
+                    IcmasteStage,
+                    _icmasteReadResult!,
+                    result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
+                await DbfVerificationHelper.VerifyDbfDeltaAsync(
+                    _dbfReaderService, IcmasteSchema.TableName, dbfFolder, IcmasteSchema.Type, "IN", icmasteBeforeCount, icmasteExport,
+                    v => IcmasteDbfPreview = v, s => IcmasteDbfStatusText = s, b => IcmasteDbfVerified = b);
+
+                var ictraneBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
+                    _dbfReaderService, dbfFolder, IctraneSchema.TableName, IctraneSchema.Type, "IN");
+                ictraneExport = await ExportStageAsync(
+                    "ictrane",
+                    IctraneStage,
+                    _ictraneReadResult!,
+                    result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
+                await DbfVerificationHelper.VerifyDbfDeltaAsync(
+                    _dbfReaderService, IctraneSchema.TableName, dbfFolder, IctraneSchema.Type, "IN", ictraneBeforeCount, ictraneExport,
+                    v => IctraneDbfPreview = v, s => IctraneDbfStatusText = s, b => IctraneDbfVerified = b);
             }
-
-            var icmasteBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
-                _dbfReaderService, dbfFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
-            icmasteExport = await ExportStageAsync(
-                "icmaste",
-                IcmasteStage,
-                _icmasteReadResult!,
-                result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
-            await DbfVerificationHelper.VerifyDbfDeltaAsync(
-                _dbfReaderService, IcmasteSchema.TableName, dbfFolder, IcmasteSchema.Type, "IN", icmasteBeforeCount, icmasteExport,
-                v => IcmasteDbfPreview = v, s => IcmasteDbfStatusText = s, b => IcmasteDbfVerified = b);
-
-            var ictraneBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
-                _dbfReaderService, dbfFolder, IctraneSchema.TableName, IctraneSchema.Type, "IN");
-            ictraneExport = await ExportStageAsync(
-                "ictrane",
-                IctraneStage,
-                _ictraneReadResult!,
-                result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
-            await DbfVerificationHelper.VerifyDbfDeltaAsync(
-                _dbfReaderService, IctraneSchema.TableName, dbfFolder, IctraneSchema.Type, "IN", ictraneBeforeCount, ictraneExport,
-                v => IctraneDbfPreview = v, s => IctraneDbfStatusText = s, b => IctraneDbfVerified = b);
+            catch (Exception ex)
+            {
+                // Outer backstop: nothing should ever crash the app.
+                _fileLogger.LogException("Unhandled error during export", ex);
+                AppendLog($"Unexpected error: {ex.Message}");
+                fatalError = ex.Message;
+            }
+            finally
+            {
+                stopwatch.Stop();
+                if (!cancelledByUser)
+                {
+                    var historyEntry = new RunHistoryEntry
+                    {
+                        ExcelPath = excelPath,
+                        DbfFolder = dbfFolder,
+                        IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
+                        IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
+                        IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
+                        IcmasteSuccess = icmasteExport?.Success ?? false,
+                        IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
+                        IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
+                        IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
+                        IctraneSuccess = ictraneExport?.Success ?? false,
+                        ErrorSummary = fatalError,
+                        DurationMs = stopwatch.ElapsedMilliseconds,
+                    };
+                    _runHistoryService.Append(historyEntry);
+                    RunHistory.Insert(0, historyEntry);
+                }
+                IsRunning = false;
+                PreviewCommand.NotifyCanExecuteChanged();
+                ConfirmExportCommand.NotifyCanExecuteChanged();
+            }
         }
         catch (Exception ex)
         {
-            // Outer backstop: nothing should ever crash the app.
+            // Outermost backstop: covers any exception thrown by the setup statements between the
+            // gate check and the inner try (e.g. a binding/PropertyChanged subscriber reacting
+            // synchronously to one of the property setters above), so the gate below is always
+            // released even if the inner try/finally was never reached.
             _fileLogger.LogException("Unhandled error during export", ex);
             AppendLog($"Unexpected error: {ex.Message}");
-            fatalError = ex.Message;
         }
         finally
         {
-            stopwatch.Stop();
-            if (!cancelledByUser)
-            {
-                var historyEntry = new RunHistoryEntry
-                {
-                    ExcelPath = excelPath,
-                    DbfFolder = dbfFolder,
-                    IcmasteRowsRead = _icmasteReadResult?.RowsRead ?? 0,
-                    IcmasteRowsSkipped = _icmasteReadResult?.SkipReasons.Count ?? 0,
-                    IcmasteRowsWritten = icmasteExport?.RowsWritten ?? 0,
-                    IcmasteSuccess = icmasteExport?.Success ?? false,
-                    IctraneRowsRead = _ictraneReadResult?.RowsRead ?? 0,
-                    IctraneRowsSkipped = _ictraneReadResult?.SkipReasons.Count ?? 0,
-                    IctraneRowsWritten = ictraneExport?.RowsWritten ?? 0,
-                    IctraneSuccess = ictraneExport?.Success ?? false,
-                    ErrorSummary = fatalError,
-                    DurationMs = stopwatch.ElapsedMilliseconds,
-                };
-                _runHistoryService.Append(historyEntry);
-                RunHistory.Insert(0, historyEntry);
-            }
-            IsRunning = false;
             _exportGateService.EndExport();
-            PreviewCommand.NotifyCanExecuteChanged();
-            ConfirmExportCommand.NotifyCanExecuteChanged();
         }
     }
 
