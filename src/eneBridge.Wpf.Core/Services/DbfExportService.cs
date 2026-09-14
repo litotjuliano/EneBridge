@@ -17,20 +17,14 @@ public sealed class DbfExportService
         _fileLogger = fileLogger;
     }
 
-    public void BackupExistingFile(string dbfFolder, string tableName)
-    {
-        var path = Path.Combine(dbfFolder, tableName + ".dbf");
-        if (File.Exists(path))
-        {
-            var backupPath = Path.Combine(dbfFolder, $"{tableName}_{DateTime.Now:yyyyMMddHHmmss}.dbf");
-            File.Move(path, backupPath);
-        }
-    }
-
     /// <summary>
-    /// Creates (or re-creates, via backup-rename) the DBF file and inserts every row. A failure
-    /// opening the connection / creating the table is fatal for this stage (Success=false); a
-    /// failure inserting a single row is recorded in RowErrors and the remaining rows still run.
+    /// Creates the DBF file if it doesn't exist yet, then inserts every row -- rows always
+    /// accumulate into the live file across calls, never replacing what's already there (see
+    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md for why: Invoice and
+    /// Stock Received both write into the same icmaste.dbf/ictrane.dbf, distinguished by TYPE, so
+    /// neither can be allowed to wipe out the other's rows). A failure opening the connection /
+    /// creating the table is fatal for this stage (Success=false); a failure inserting a single
+    /// row is recorded in RowErrors and the remaining rows still run.
     /// </summary>
     public StageExportResult Export(string dbfFolder, string tableName, DataTable data, IReadOnlyList<DbfColumnDefinition> schema)
     {
@@ -44,7 +38,8 @@ public sealed class DbfExportService
         try
         {
             Directory.CreateDirectory(dbfFolder);
-            BackupExistingFile(dbfFolder, tableName);
+
+            var tableExists = File.Exists(Path.Combine(dbfFolder, tableName + ".dbf"));
 
             var connectionString =
                 $@"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbfFolder};Extended Properties=""dBASE IV;CollatingSequence=1252"";";
@@ -52,14 +47,20 @@ public sealed class DbfExportService
             _fileLogger?.LogInfo($"[{tableName}] Opening OleDb connection to '{dbfFolder}'");
             using var connection = new OleDbConnection(connectionString);
             connection.Open();
-            _fileLogger?.LogInfo($"[{tableName}] Connection opened, running CREATE TABLE");
+            _fileLogger?.LogInfo($"[{tableName}] Connection opened");
 
-            var createTableSql = DbfSchemaBuilder.BuildCreateTableSql(tableName, schema);
-            using (var createCommand = new OleDbCommand(createTableSql, connection))
+            if (!tableExists)
             {
-                createCommand.ExecuteNonQuery();
+                _fileLogger?.LogInfo($"[{tableName}] Table does not exist yet, running CREATE TABLE");
+                var createTableSql = DbfSchemaBuilder.BuildCreateTableSql(tableName, schema);
+                using (var createCommand = new OleDbCommand(createTableSql, connection))
+                {
+                    createCommand.ExecuteNonQuery();
+                }
+                _fileLogger?.LogInfo($"[{tableName}] CREATE TABLE succeeded");
             }
-            _fileLogger?.LogInfo($"[{tableName}] CREATE TABLE succeeded, inserting {data.Rows.Count} row(s)");
+
+            _fileLogger?.LogInfo($"[{tableName}] Inserting {data.Rows.Count} row(s)");
 
             int rowsWritten = 0;
             int rowIndex = 0;
