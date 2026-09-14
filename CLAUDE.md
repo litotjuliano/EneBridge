@@ -117,9 +117,11 @@ and left the rest schema-only too, so this is not a gap introduced by the rebuil
 **DBF export** (`Services/DbfExportService.cs`, `Services/DbfSchemaBuilder.cs`,
 `Services/SqlValueFormatter.cs`) writes via OleDb through the Access Database Engine's dBASE IV
 driver (`Provider=Microsoft.ACE.OLEDB.12.0`) — there's no good managed alternative for writing DBF
-files, so this piece intentionally keeps the original's approach. If a `<table>.dbf` already exists
-in the target folder, it's renamed with a timestamp suffix as a backup (never deleted, no retention
-limit) before a fresh file is created. DBF field names are limited to 10 chars and `[A-Za-z0-9_]`;
+files, so this piece intentionally keeps the original's approach. `DbfExportService.Export` creates
+the `<table>.dbf` file (via `CREATE TABLE`) only if it doesn't already exist, and always appends
+rows to whatever's already there — it never recreates or backs up an existing file itself; that
+responsibility belongs to `DbfSafetyBackupService`, described in the next paragraph. DBF field
+names are limited to 10 chars and `[A-Za-z0-9_]`;
 `DbfSchemaBuilder.SanitizeColumnName` enforces this for both the generated `CREATE TABLE` and
 `INSERT` column lists (the original only sanitized names for `CREATE TABLE`, not `INSERT`, which
 was a latent bug — harmless today since no current column name needs sanitizing, but fixed here to
@@ -136,8 +138,10 @@ itself is broken. `AceEngineGuardService` spawns `eneBridge.Wpf.exe --selftest-a
 child process once per session (via `AceEngineSelfTestService`, a real DBF round-trip through a
 throwaway table) so a native crash from a broken driver only kills that child, never the app;
 `MainViewModel.CanExport` is gated on the result, with a "Fix it now" repair flow that re-runs the
-bundled `accessdatabaseengine_X64.exe` elevated. `MainViewModel.ConfirmTablesReadable` warns
-(Continue/Cancel) if either table can't be read before the export's own backup-rename runs —
+bundled `accessdatabaseengine_X64.exe` elevated. `DbfWorkflowHelper.ConfirmTablesReadable` warns
+(Continue/Cancel) if either table can't be read, checked before `DbfExportService.Export` is
+called (which, per the DBF export paragraph above, now only creates the table if missing and
+otherwise appends, with no recreate-and-back-up step of its own to run before) —
 deliberately checked via plain file I/O (`Directory.Exists`/`File.Exists`/a shared-read
 `FileStream` probe) rather than `DbfReaderService.Read`, since a real OleDb `SELECT` against a
 nonexistent table was found to intermittently crash the process with this same native-crash
@@ -206,11 +210,13 @@ file under `%AppData%\eneBridge\logs\`, kept separate from the concise on-screen
 the original (possibly removable) media staying available. `StageFile` takes the target file name
 as a parameter (not a hardcoded constant) — each workflow stages under its own fixed name in the
 same shared folder: the Invoice tab always stages to `invoice.xlsx`
-(`MainViewModel.InvoiceStagedFileName`); a future Stock Received workflow is expected to use
-`stockreceived.xlsx`. This rename-and-replace happens only at import time (a new Browse), never
-during Run — a same-named existing staged file is renamed with a timestamp suffix and kept as a
-permanent backup (mirroring `DbfExportService`'s backup-on-collision behavior, same "never
-deleted" retention policy, same folder rather than a separate backup subfolder), then the new file
+(`MainViewModel.InvoiceStagedFileName`); the Stock Received workflow stages to `stockreceived.xlsx`
+(`StockReceivedViewModel.StageExcelSource`/`StockReceivedStagedFileName`). This rename-and-replace
+happens only at import time (a new Browse), never during Run — a same-named existing staged file
+is renamed with a timestamp suffix and kept as a permanent backup right there in the same
+`ExcelSource` folder rather than a separate backup subfolder, never deleted, no retention limit
+(unlike `DbfSafetyBackupService`, which backs up into its own separate `Backups\<table>\` folder —
+the two don't mirror each other's layout, just the same never-delete philosophy), then the new file
 takes its place immediately, so the live file is never left missing. Run itself only ever reads
 the current staged file — it never renames, moves, or deletes it, so re-running repeatedly is
 always safe. Staging failures are logged via `FileLogger` and fall back to using the originally
@@ -256,7 +262,7 @@ prevention" above). The underlying driver instability itself turned out to be br
 doesn't exist yet (`DbfReaderService.Read`, no INSERT, no connection reuse involved) was
 independently confirmed to trigger the same native crash on this machine, intermittently, even
 with an otherwise-healthy driver — `DbfReaderServiceTests.Read_TableDoesNotExist_ReturnsFailureWithErrorMessage`
-reproduces it in isolation (crashed 2 of 3 runs). Because of this, `MainViewModel.ConfirmTablesReadable`
+reproduces it in isolation (crashed 2 of 3 runs). Because of this, `DbfWorkflowHelper.ConfirmTablesReadable`
 (see "DBF export crash prevention" above) deliberately avoids `DbfReaderService.Read` entirely,
 using plain file I/O instead. `VerifyDbfAsync`'s own post-export read-back still calls
 `DbfReaderService.Read` and carries this same pre-existing exposure — untouched by this work,
