@@ -1,16 +1,16 @@
-using System.Data;
 using System.IO;
 using System.Windows;
 using eneBridge.Wpf.Core.Models;
-using eneBridge.Wpf.Core.Services;
 
 namespace eneBridge.Wpf.Services;
 
 /// <summary>
-/// Shared DBF safety/verification helpers used by both MainViewModel (Invoice) and
-/// StockReceivedViewModel, so the ACE-driver-crash-avoidance table check and the append-aware
-/// before/after-delta verification only exist in one place. See
-/// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md.
+/// The ACE-driver-crash-avoidance table check, shared by MainViewModel (Invoice) and
+/// StockReceivedViewModel, so it only exists in one place. Stays in the Wpf project (rather than
+/// alongside eneBridge.Wpf.Core.Services.DbfVerificationHelper) because it needs
+/// System.Windows.MessageBox to prompt the user; the append-aware before/after-delta
+/// verification has no UI dependency and lives in Core instead, where it's directly
+/// unit-testable. See docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md.
 /// </summary>
 public static class DbfWorkflowHelper
 {
@@ -81,69 +81,6 @@ public static class DbfWorkflowHelper
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return (false, ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// Counts how many rows currently match `typeValue` in `tableName` — used as the "before"
-    /// count for the append-aware delta verification below. Returns 0 without the caller needing
-    /// to special-case a missing table: DbfReaderService.Read already returns a clean failure (and
-    /// RowCount 0) without touching OleDb when the table's .dbf file doesn't exist yet, which is
-    /// exactly the case on a genuine first-ever run.
-    /// </summary>
-    public static async Task<int> CountRowsByTypeAsync(
-        DbfReaderService dbfReaderService, string dbfFolder, string tableName, string typeColumnName, string typeValue)
-    {
-        var result = await Task.Run(() => dbfReaderService.Read(dbfFolder, tableName, typeColumnName, typeValue));
-        return result.Success ? result.RowCount : 0;
-    }
-
-    /// <summary>
-    /// Reads the table back (filtered to `typeValue`) after an export, and compares how many new
-    /// matching rows appeared against what the export reported writing — an append-aware delta
-    /// check, since rows now accumulate across runs instead of the file being fully replaced each
-    /// time (a plain "total rows == rows written" comparison would show a false mismatch on every
-    /// run after the first). Never throws.
-    /// </summary>
-    public static async Task VerifyDbfDeltaAsync(
-        DbfReaderService dbfReaderService,
-        string tableName,
-        string dbfFolder,
-        string typeColumnName,
-        string typeValue,
-        int beforeCount,
-        StageExportResult? exportResult,
-        Action<DataView?> setPreview,
-        Action<string> setStatusText,
-        Action<bool> setVerified)
-    {
-        var readResult = await Task.Run(() => dbfReaderService.Read(dbfFolder, tableName, typeColumnName, typeValue));
-        setPreview(readResult.Success ? readResult.Table.DefaultView : null);
-
-        if (!readResult.Success)
-        {
-            setStatusText($"Could not verify: {readResult.ErrorMessage}");
-            setVerified(false);
-            return;
-        }
-
-        var expectedNewRows = exportResult?.RowsWritten ?? 0;
-        var actualNewRows = readResult.RowCount - beforeCount;
-
-        if ((exportResult?.Success ?? false) && expectedNewRows == actualNewRows)
-        {
-            setStatusText($"{tableName}: {actualNewRows} row(s) written and confirmed in DBF ✓ ({readResult.RowCount} total)");
-            setVerified(true);
-        }
-        else if (exportResult?.Success ?? false)
-        {
-            setStatusText($"{tableName}: wrote {expectedNewRows} row(s) but DBF shows {actualNewRows} new row(s) ⚠ ({readResult.RowCount} total)");
-            setVerified(false);
-        }
-        else
-        {
-            setStatusText($"{tableName}: export failed — DBF currently has {readResult.RowCount} row(s) (may include previous runs)");
-            setVerified(false);
         }
     }
 }

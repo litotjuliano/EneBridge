@@ -361,25 +361,25 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
-            var icmasteBeforeCount = await DbfWorkflowHelper.CountRowsByTypeAsync(
+            var icmasteBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
                 _dbfReaderService, dbfFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
             icmasteExport = await ExportStageAsync(
                 "icmaste",
                 IcmasteStage,
                 _icmasteReadResult!,
                 result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
-            await DbfWorkflowHelper.VerifyDbfDeltaAsync(
+            await DbfVerificationHelper.VerifyDbfDeltaAsync(
                 _dbfReaderService, IcmasteSchema.TableName, dbfFolder, IcmasteSchema.Type, "IN", icmasteBeforeCount, icmasteExport,
                 v => IcmasteDbfPreview = v, s => IcmasteDbfStatusText = s, b => IcmasteDbfVerified = b);
 
-            var ictraneBeforeCount = await DbfWorkflowHelper.CountRowsByTypeAsync(
+            var ictraneBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
                 _dbfReaderService, dbfFolder, IctraneSchema.TableName, IctraneSchema.Type, "IN");
             ictraneExport = await ExportStageAsync(
                 "ictrane",
                 IctraneStage,
                 _ictraneReadResult!,
                 result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
-            await DbfWorkflowHelper.VerifyDbfDeltaAsync(
+            await DbfVerificationHelper.VerifyDbfDeltaAsync(
                 _dbfReaderService, IctraneSchema.TableName, dbfFolder, IctraneSchema.Type, "IN", ictraneBeforeCount, ictraneExport,
                 v => IctraneDbfPreview = v, s => IctraneDbfStatusText = s, b => IctraneDbfVerified = b);
         }
