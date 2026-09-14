@@ -25,6 +25,8 @@ public partial class MainViewModel : ObservableObject
     private readonly AceEngineGuardService _aceEngineGuardService;
     private readonly string _appBaseDirectory;
 
+    public StockReceivedViewModel StockReceivedViewModel { get; }
+
     private StageReadResult? _icmasteReadResult;
     private StageReadResult? _ictraneReadResult;
 
@@ -96,6 +98,7 @@ public partial class MainViewModel : ObservableObject
         FileLogger fileLogger,
         ExcelSourceStagingService excelSourceStagingService,
         AceEngineGuardService aceEngineGuardService,
+        StockReceivedViewModel stockReceivedViewModel,
         string appBaseDirectory)
     {
         _excelReaderService = excelReaderService;
@@ -107,6 +110,7 @@ public partial class MainViewModel : ObservableObject
         _fileLogger = fileLogger;
         _excelSourceStagingService = excelSourceStagingService;
         _aceEngineGuardService = aceEngineGuardService;
+        StockReceivedViewModel = stockReceivedViewModel;
         _appBaseDirectory = appBaseDirectory;
     }
 
@@ -146,6 +150,7 @@ public partial class MainViewModel : ObservableObject
             ? string.Empty
             : "Access Database Engine isn't working correctly — Confirm & Export is disabled until this is fixed.";
         ConfirmExportCommand.NotifyCanExecuteChanged();
+        StockReceivedViewModel.SetAceEngineHealth(healthy);
     }
 
     private void PromptToRepairAceEngine()

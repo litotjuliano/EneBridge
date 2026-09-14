@@ -33,8 +33,21 @@ public partial class App : Application
         var dbfSafetyBackupService = new DbfSafetyBackupService(fileLogger);
         var settingsService = new SettingsService(AppContext.BaseDirectory);
         var runHistoryService = new RunHistoryService();
+        var stockReceivedRunHistoryService = new RunHistoryService(fileName: "stockReceivedRunHistory.json");
         var excelSourceStagingService = new ExcelSourceStagingService();
         var aceEngineGuardService = new AceEngineGuardService(fileLogger, AppContext.BaseDirectory);
+
+        var stockReceivedViewModel = new StockReceivedViewModel(
+            excelReaderService,
+            dbfExportService,
+            dbfReaderService,
+            dbfSafetyBackupService,
+            settingsService,
+            stockReceivedRunHistoryService,
+            fileLogger,
+            excelSourceStagingService,
+            AppContext.BaseDirectory);
+        stockReceivedViewModel.Initialize();
 
         var mainViewModel = new MainViewModel(
             excelReaderService,
@@ -46,6 +59,7 @@ public partial class App : Application
             fileLogger,
             excelSourceStagingService,
             aceEngineGuardService,
+            stockReceivedViewModel,
             AppContext.BaseDirectory);
         mainViewModel.Initialize();
 
