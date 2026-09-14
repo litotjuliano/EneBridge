@@ -12,6 +12,26 @@ namespace eneBridge.Wpf.Core.Services;
 /// anything itself — callers decide what to do with the result (see
 /// eneBridge.Wpf.Services.DbfWorkflowHelper.ConfirmNoDuplicateDocuments for the UI-coupled
 /// Continue/Cancel prompt built on top of this).
+///
+/// Two known gaps, not yet fixed (see CLAUDE.md's "Current status" section for the matching
+/// project-level writeup):
+/// 1. This only reads icmaste.dbf, on the assumption that a REF+CODE match there means the whole
+///    document — including its ictrane line items — was already exported. But
+///    MainViewModel.ConfirmExportAsync/StockReceivedViewModel.ConfirmExportAsync run icmaste's and
+///    ictrane's DbfExportService.Export calls as two independent stages (via the shared
+///    ExportStageAsync helper) with no guard preventing the ictrane stage from running if the
+///    icmaste stage failed. If a run writes ictrane's rows for a document but icmaste's row for
+///    that same document fails to write, a later retry's check reads only icmaste, correctly finds
+///    no match, proceeds unwarned, and re-writes ictrane's already-present rows for that document.
+/// 2. FindDuplicateRefsAsync below returns an empty list whenever DbfReaderService.Read's Success
+///    is false, treating "icmaste.dbf doesn't exist yet" (genuinely nothing to warn about) the
+///    same as "the table exists but the OleDb SELECT itself failed" (e.g. a corrupt DBF, or the
+///    ACE-driver native-crash-adjacent instability CLAUDE.md's "Known reliability risk" section
+///    documents around DbfReaderService.Read). In the second case the check silently does nothing
+///    and the export proceeds with no indication it didn't actually run.
+///    DbfWorkflowHelper.ConfirmTablesReadable, which runs earlier in the same ConfirmExportAsync
+///    flow, only does a plain-file-I/O readability probe and does not exercise the OleDb SELECT
+///    path either, so it doesn't catch this failure mode.
 /// </summary>
 public static class DuplicateDocumentChecker
 {
@@ -20,7 +40,10 @@ public static class DuplicateDocumentChecker
     /// already exists in icmaste.dbf for <paramref name="typeValue"/>, preserving first-seen order.
     /// Returns an empty list (not a failure) if icmaste.dbf doesn't exist yet or can't currently be
     /// read — a first-ever export has nothing to duplicate against, and this check must never
-    /// throw or block an otherwise-valid export on its own.
+    /// throw or block an otherwise-valid export on its own. Note that this same empty-list fallback
+    /// also fires when the table exists but the underlying OleDb SELECT fails for some other
+    /// reason (see the class-level doc comment's gap 2) — that case is indistinguishable from "no
+    /// duplicates" to callers today.
     /// </summary>
     public static async Task<IReadOnlyList<string>> FindDuplicateRefsAsync(
         DbfReaderService dbfReaderService,
