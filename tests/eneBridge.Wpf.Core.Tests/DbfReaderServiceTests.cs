@@ -68,4 +68,29 @@ public class DbfReaderServiceTests : IDisposable
         Assert.False(string.IsNullOrEmpty(result.ErrorMessage));
         Assert.Equal(0, result.RowCount);
     }
+
+    [Fact]
+    public void Read_WithTypeFilter_ReturnsOnlyMatchingRows()
+    {
+        var excelReader = new ExcelReaderService();
+        var dbfExporter = new DbfExportService();
+        var dbfReader = new DbfReaderService();
+
+        using var workbook = excelReader.OpenWorkbook(FixturePath);
+        var worksheet = workbook.Worksheets.First();
+        var icmasteRead = excelReader.ReadIcmaste(worksheet);
+        dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
+
+        // The fixture's rows are all TYPE="IN" (Invoice). Filtering for a TYPE that doesn't exist
+        // in the data should cleanly return zero rows, proving the filter actually filters rather
+        // than just ignoring the extra arguments.
+        var matchingResult = dbfReader.Read(_scratchFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
+        var nonMatchingResult = dbfReader.Read(_scratchFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "RE");
+
+        Assert.True(matchingResult.Success, matchingResult.ErrorMessage);
+        Assert.Equal(3, matchingResult.RowCount);
+
+        Assert.True(nonMatchingResult.Success, nonMatchingResult.ErrorMessage);
+        Assert.Equal(0, nonMatchingResult.RowCount);
+    }
 }
