@@ -10,12 +10,12 @@ public sealed class RunHistoryService
 
     private readonly string _historyPath;
 
-    public RunHistoryService(string? userDataDirectory = null)
+    public RunHistoryService(string? userDataDirectory = null, string fileName = "runHistory.json")
     {
         var dataDir = userDataDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "eneBridge");
         Directory.CreateDirectory(dataDir);
-        _historyPath = Path.Combine(dataDir, "runHistory.json");
+        _historyPath = Path.Combine(dataDir, fileName);
     }
 
     public List<RunHistoryEntry> LoadAll()
