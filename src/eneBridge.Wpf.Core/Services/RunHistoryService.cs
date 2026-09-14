@@ -3,7 +3,11 @@ using eneBridge.Wpf.Core.Models;
 
 namespace eneBridge.Wpf.Core.Services;
 
-/// <summary>Persists run history to %AppData%\eneBridge\runHistory.json so it survives restarts.</summary>
+/// <summary>
+/// Persists run history to %AppData%\eneBridge\&lt;fileName&gt; (default "runHistory.json") so it
+/// survives restarts. Each workflow (Invoice, Stock Received) is expected to construct its own
+/// instance with its own fileName, so their histories stay in separate files.
+/// </summary>
 public sealed class RunHistoryService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
