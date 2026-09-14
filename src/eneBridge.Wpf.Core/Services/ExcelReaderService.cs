@@ -188,6 +188,138 @@ public sealed class ExcelReaderService
         return new StageReadResult { Table = table, RowsRead = rowsRead, SkipReasons = skipReasons };
     }
 
+    private readonly record struct StockReceivedRowFields(
+        string Ref, DateTime Date, string Code, string Name, string ItemNo, string Desc1, string Qty, decimal NAmt, decimal TAmt);
+
+    /// <summary>
+    /// Shared validation for both ReadStockReceivedIcmaste and ReadStockReceivedIctrane -- every
+    /// valid row produces exactly one row in each table with identical skip conditions (see
+    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md).
+    /// </summary>
+    private static StockReceivedRowFields? ReadStockReceivedRowFields(IXLWorksheet worksheet, int excelRow, List<RowSkipReason> skipReasons)
+    {
+        string refValue = GetString(worksheet, excelRow, StockReceivedExcelCol.Ref);
+        string dateRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.Date);
+        string codeValue = GetString(worksheet, excelRow, StockReceivedExcelCol.Code);
+        string nameValue = GetString(worksheet, excelRow, StockReceivedExcelCol.Name);
+        string itemNoValue = GetString(worksheet, excelRow, StockReceivedExcelCol.ItemNo);
+
+        if (IsBlank(refValue)) { skipReasons.Add(new RowSkipReason(excelRow, "REF is blank")); return null; }
+        if (IsBlank(dateRaw)) { skipReasons.Add(new RowSkipReason(excelRow, "DATE is blank")); return null; }
+        if (IsBlank(codeValue)) { skipReasons.Add(new RowSkipReason(excelRow, "CODE is blank")); return null; }
+        if (IsBlank(nameValue)) { skipReasons.Add(new RowSkipReason(excelRow, "NAME is blank")); return null; }
+        if (IsBlank(itemNoValue)) { skipReasons.Add(new RowSkipReason(excelRow, "ITEM_NO is blank")); return null; }
+
+        DateTime date;
+        try
+        {
+            date = ParseDate(worksheet, excelRow, StockReceivedExcelCol.Date, dateRaw);
+        }
+        catch (Exception ex)
+        {
+            skipReasons.Add(new RowSkipReason(excelRow, $"DATE parse failed: {ex.Message}"));
+            return null;
+        }
+
+        string desc1Value = GetString(worksheet, excelRow, StockReceivedExcelCol.Desc1);
+        string qtyValue = GetString(worksheet, excelRow, StockReceivedExcelCol.Qty);
+
+        string nAmtRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.NAmt);
+        if (!TryParseOptionalDecimal(nAmtRaw, "Unit Price", excelRow, skipReasons, out var nAmtOpt)) { return null; }
+
+        string tAmtRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.TAmt);
+        if (!TryParseOptionalDecimal(tAmtRaw, "Total Amount", excelRow, skipReasons, out var tAmtOpt)) { return null; }
+
+        return new StockReceivedRowFields(refValue, date, codeValue, nameValue, itemNoValue, desc1Value, qtyValue, nAmtOpt ?? 0m, tAmtOpt ?? 0m);
+    }
+
+    /// <summary>
+    /// Reads icmaste rows for the Stock Received workflow. Unlike Invoice, every valid row
+    /// produces its own icmaste row -- no REF dedup, since each row is a standalone self-billed
+    /// document (confirmed against the real sample data; see
+    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md).
+    /// </summary>
+    public StageReadResult ReadStockReceivedIcmaste(IXLWorksheet worksheet)
+    {
+        ValidateColumnCount(worksheet, StockReceivedExcelCol.MinColumnCount);
+
+        var table = IcmasteSchema.BuildEmptyTable();
+        var skipReasons = new List<RowSkipReason>();
+
+        int lastRow = worksheet.LastRowUsed()?.RowNumber() ?? 0;
+        int rowsRead = 0;
+
+        for (int excelRow = ExcelLayout.FirstDataRow; excelRow <= lastRow; excelRow++)
+        {
+            rowsRead++;
+
+            var fields = ReadStockReceivedRowFields(worksheet, excelRow, skipReasons);
+            if (fields is null)
+            {
+                continue;
+            }
+
+            var row = table.NewRow();
+            row[IcmasteSchema.Type] = "RE";
+            row[IcmasteSchema.Ref] = TextTruncation.Truncate(fields.Value.Ref, 11);
+            row[IcmasteSchema.Date] = fields.Value.Date.Date;
+            row[IcmasteSchema.Code] = TextTruncation.Truncate(fields.Value.Code, 8);
+            row[IcmasteSchema.Name] = TextTruncation.Truncate(fields.Value.Name, 40);
+            row[IcmasteSchema.Accno] = "3020/000";
+            row[IcmasteSchema.User] = "admin";
+            row[IcmasteSchema.PostAccno] = "6010/000";
+            row[IcmasteSchema.Cust2] = TextTruncation.Truncate(fields.Value.Code, 8);
+            row[IcmasteSchema.Entry] = TextTruncation.Truncate(fields.Value.Ref, 10);
+            row[IcmasteSchema.CurrCode] = "MYR";
+            row[IcmasteSchema.TaxCode] = "SST0";
+            row[IcmasteSchema.VendNo] = TextTruncation.Truncate(fields.Value.Code, 8);
+            row[IcmasteSchema.NAmt] = fields.Value.NAmt;
+            row[IcmasteSchema.TAmt] = fields.Value.TAmt;
+            table.Rows.Add(row);
+        }
+
+        return new StageReadResult { Table = table, RowsRead = rowsRead, SkipReasons = skipReasons };
+    }
+
+    /// <summary>
+    /// Reads ictrane rows for the Stock Received workflow -- one row per valid Excel row, same
+    /// skip conditions as ReadStockReceivedIcmaste (see that method's doc comment).
+    /// </summary>
+    public StageReadResult ReadStockReceivedIctrane(IXLWorksheet worksheet)
+    {
+        ValidateColumnCount(worksheet, StockReceivedExcelCol.MinColumnCount);
+
+        var table = IctraneSchema.BuildEmptyTable();
+        var skipReasons = new List<RowSkipReason>();
+
+        int lastRow = worksheet.LastRowUsed()?.RowNumber() ?? 0;
+        int rowsRead = 0;
+
+        for (int excelRow = ExcelLayout.FirstDataRow; excelRow <= lastRow; excelRow++)
+        {
+            rowsRead++;
+
+            var fields = ReadStockReceivedRowFields(worksheet, excelRow, skipReasons);
+            if (fields is null)
+            {
+                continue;
+            }
+
+            var row = table.NewRow();
+            row[IctraneSchema.Type] = "RE";
+            row[IctraneSchema.Ref] = TextTruncation.Truncate(fields.Value.Ref, 11);
+            row[IctraneSchema.ItemNo] = TextTruncation.Truncate(fields.Value.ItemNo, 24);
+            row[IctraneSchema.Desc1] = TextTruncation.Truncate(fields.Value.Desc1, 60);
+            row[IctraneSchema.Desc2] = TextTruncation.Truncate(fields.Value.Qty, 40);
+            row[IctraneSchema.TaxCode] = "SST0";
+            row[IctraneSchema.UserId] = "admin";
+            row[IctraneSchema.Entry] = TextTruncation.Truncate(fields.Value.Ref, 10);
+            table.Rows.Add(row);
+        }
+
+        return new StageReadResult { Table = table, RowsRead = rowsRead, SkipReasons = skipReasons };
+    }
+
     private static bool TryParseOptionalDecimal(
         string raw, string fieldName, int excelRow, List<RowSkipReason> skipReasons, out decimal? value)
     {
