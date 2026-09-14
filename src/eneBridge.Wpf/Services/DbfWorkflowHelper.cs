@@ -55,6 +55,35 @@ public static class DbfWorkflowHelper
     }
 
     /// <summary>
+    /// Warns (with a Continue/Cancel choice) if any of the given REFs already exist in icmaste.dbf
+    /// for this document's supplier/customer CODE — i.e. this exact document may already have been
+    /// exported in an earlier run. DbfExportService.Export always appends now, so nothing else in
+    /// the pipeline catches this; re-clicking Confirm & Export (or re-importing the same file) would
+    /// otherwise silently duplicate every row for that document. Returns true to proceed
+    /// (no duplicates found, or the user chose to continue anyway), false to cancel the export.
+    /// </summary>
+    public static bool ConfirmNoDuplicateDocuments(IReadOnlyList<string> duplicateRefs)
+    {
+        if (duplicateRefs.Count == 0)
+        {
+            return true;
+        }
+
+        var refList = string.Join(", ", duplicateRefs);
+        var proceed = MessageBox.Show(
+            $"The following document number(s) already exist in icmaste.dbf for this " +
+            $"supplier/customer: {refList}\n\n" +
+            "This usually means this file (or these rows) was already exported in an earlier " +
+            "run. Exporting again will duplicate these rows in the DBF files EMAS imports from.\n\n" +
+            "Continue anyway?",
+            "eneBridge - Duplicate Document Check",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        return proceed == MessageBoxResult.Yes;
+    }
+
+    /// <summary>
     /// Pure filesystem readability probe for one table's .dbf file — no OleDb involved. Opens with
     /// FileShare.ReadWrite (the most permissive request our own read can make) so this only reports
     /// "locked" when another process genuinely holds an incompatible lock, not merely because

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using ClosedXML.Excel;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -376,6 +377,19 @@ public partial class MainViewModel : ObservableObject
                     IcmasteDbfStatusText = "Run Confirm & Export to verify.";
                     IctraneDbfStatusText = "Run Confirm & Export to verify.";
                     AppendLog("Export cancelled by user after the table check.");
+                    return;
+                }
+
+                var icmasteCandidates = _icmasteReadResult!.Table.AsEnumerable()
+                    .Select(row => (Ref: row[IcmasteSchema.Ref] as string ?? string.Empty, Code: row[IcmasteSchema.Code] as string ?? string.Empty))
+                    .ToList();
+                var duplicateRefs = await DuplicateDocumentChecker.FindDuplicateRefsAsync(_dbfReaderService, dbfFolder, "IN", icmasteCandidates);
+                if (!DbfWorkflowHelper.ConfirmNoDuplicateDocuments(duplicateRefs))
+                {
+                    cancelledByUser = true;
+                    IcmasteDbfStatusText = "Run Confirm & Export to verify.";
+                    IctraneDbfStatusText = "Run Confirm & Export to verify.";
+                    AppendLog($"Export cancelled by user after the duplicate-document check ({duplicateRefs.Count} duplicate REF(s) found).");
                     return;
                 }
 
