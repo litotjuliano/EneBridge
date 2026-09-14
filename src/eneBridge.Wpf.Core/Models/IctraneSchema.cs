@@ -17,6 +17,7 @@ public static class IctraneSchema
     public const string Entry = "entry";
     public const string ItemNo = "item_no";
     public const string Desc1 = "desc1";
+    public const string Desc2 = "desc2";
     public const string Qty = "qty";
     public const string Price = "price";
     public const string Amount = "amount";
@@ -55,7 +56,7 @@ public static class IctraneSchema
             new("sequence", s, 1),
             new(ItemNo, s, 24),
             new(Desc1, s, 60),
-            new("desc2", s, 40),
+            new(Desc2, s, 40),
             new("location", s, 10),
             new("bin", s, 10),
             new("toloc", s, 10),

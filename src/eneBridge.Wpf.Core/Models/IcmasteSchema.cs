@@ -32,6 +32,9 @@ public static class IcmasteSchema
     public const string Atms = "ATMS";
     public const string DepPaid = "DEPPAID";
     public const string Erefund = "EREFUND";
+    public const string VendNo = "VENDNO";
+    public const string NAmt = "N_AMT";
+    public const string TAmt = "T_AMT";
 
     // Part of the required schema below (see BuildColumns) but never assigned a value by
     // ExcelReaderService — declared here only because BuildColumns references them by name.
@@ -74,8 +77,8 @@ public static class IcmasteSchema
             new("DOC", s, 11),
             new("DOC1", s, 11),
             new("DO_NO", s, 11),
-            new("T_AMT", m),
-            new("N_AMT", m),
+            new(TAmt, m),
+            new(NAmt, m),
             new(AddCost, m),
             new("ADD_ACC", s, 8),
             new("ADD_ACC1", s, 8),
@@ -141,7 +144,7 @@ public static class IcmasteSchema
             new DbfColumnDefinition("RETR", s, 1),
             new DbfColumnDefinition(User, s, 10),
             new DbfColumnDefinition(PostAccno, s, 8),
-            new DbfColumnDefinition("VENDNO", s, 8),
+            new DbfColumnDefinition(VendNo, s, 8),
             new DbfColumnDefinition(FcRate, m),
             new DbfColumnDefinition("PO_NO", s, 20),
             new DbfColumnDefinition("DOWNACC", s, 8),
