@@ -183,78 +183,6 @@ public partial class MainViewModel : ObservableObject
             fixedNow ? MessageBoxImage.Information : MessageBoxImage.Error);
     }
 
-    /// <summary>
-    /// Warns (with a Continue/Cancel choice) if either table can't currently be read — covers
-    /// "file doesn't exist", "table locked by EMAS", and "folder unreachable" alike. Deliberately
-    /// checks via the filesystem only (File.Exists/Directory.Exists/a shared-read FileStream probe)
-    /// rather than DbfReaderService.Read: a real OleDb SELECT against a nonexistent table was found
-    /// to intermittently crash the process with the same native AccessViolationException/
-    /// ComObject.Finalize signature this whole feature exists to guard against — reproduced even on
-    /// a machine with an otherwise-healthy ACE driver (AceEngineHealthy provides no protection
-    /// against this specific trigger, since it's not the Office-Click-to-Run failure mode). Using
-    /// plain file I/O here removes OleDb from this code path entirely, matching
-    /// DbfSafetyBackupService's same discipline. Checks both tables even if the first fails, unless
-    /// the user cancels on the first warning.
-    /// </summary>
-    private bool ConfirmTablesReadable(string dbfFolder)
-    {
-        foreach (var tableName in new[] { IcmasteSchema.TableName, IctraneSchema.TableName })
-        {
-            var (isReadable, errorMessage) = CheckTableFileReadable(dbfFolder, tableName);
-            if (isReadable)
-            {
-                continue;
-            }
-
-            var proceed = MessageBox.Show(
-                $"{tableName}.dbf could not be found or read in '{dbfFolder}':\n{errorMessage}\n\n" +
-                "This is expected on a first-ever export to this folder, but if you expect this " +
-                "table to already exist, something may be wrong (wrong folder selected, the table " +
-                "is locked by EMAS, or a previous export was interrupted).\n\n" +
-                "Continue anyway?",
-                "eneBridge - Table Check",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (proceed != MessageBoxResult.Yes)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Pure filesystem readability probe for one table's .dbf file — no OleDb involved. Opens with
-    /// FileShare.ReadWrite (the most permissive request our own read can make) so this only reports
-    /// "locked" when another process genuinely holds an incompatible lock, not merely because
-    /// something else has the file open for reading too.
-    /// </summary>
-    private static (bool IsReadable, string? ErrorMessage) CheckTableFileReadable(string dbfFolder, string tableName)
-    {
-        if (!Directory.Exists(dbfFolder))
-        {
-            return (false, $"The folder '{dbfFolder}' does not exist or is not reachable.");
-        }
-
-        var dbfPath = Path.Combine(dbfFolder, tableName + ".dbf");
-        if (!File.Exists(dbfPath))
-        {
-            return (false, $"'{tableName}.dbf' does not exist in this folder.");
-        }
-
-        try
-        {
-            using var stream = new FileStream(dbfPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            return (true, null);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return (false, ex.Message);
-        }
-    }
-
     [RelayCommand]
     private void BrowseExcel()
     {
@@ -424,7 +352,7 @@ public partial class MainViewModel : ObservableObject
                 _dbfSafetyBackupService.BackupIfExists(dbfFolder, IctraneSchema.TableName);
             });
 
-            if (!ConfirmTablesReadable(dbfFolder))
+            if (!DbfWorkflowHelper.ConfirmTablesReadable(dbfFolder))
             {
                 cancelledByUser = true;
                 IcmasteDbfStatusText = "Run Confirm & Export to verify.";
@@ -433,22 +361,26 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
+            var icmasteBeforeCount = await DbfWorkflowHelper.CountRowsByTypeAsync(
+                _dbfReaderService, dbfFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
             icmasteExport = await ExportStageAsync(
                 "icmaste",
                 IcmasteStage,
                 _icmasteReadResult!,
                 result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
-            await VerifyDbfAsync(
-                IcmasteSchema.TableName, dbfFolder, icmasteExport,
+            await DbfWorkflowHelper.VerifyDbfDeltaAsync(
+                _dbfReaderService, IcmasteSchema.TableName, dbfFolder, IcmasteSchema.Type, "IN", icmasteBeforeCount, icmasteExport,
                 v => IcmasteDbfPreview = v, s => IcmasteDbfStatusText = s, b => IcmasteDbfVerified = b);
 
+            var ictraneBeforeCount = await DbfWorkflowHelper.CountRowsByTypeAsync(
+                _dbfReaderService, dbfFolder, IctraneSchema.TableName, IctraneSchema.Type, "IN");
             ictraneExport = await ExportStageAsync(
                 "ictrane",
                 IctraneStage,
                 _ictraneReadResult!,
                 result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
-            await VerifyDbfAsync(
-                IctraneSchema.TableName, dbfFolder, ictraneExport,
+            await DbfWorkflowHelper.VerifyDbfDeltaAsync(
+                _dbfReaderService, IctraneSchema.TableName, dbfFolder, IctraneSchema.Type, "IN", ictraneBeforeCount, ictraneExport,
                 v => IctraneDbfPreview = v, s => IctraneDbfStatusText = s, b => IctraneDbfVerified = b);
         }
         catch (Exception ex)
@@ -537,50 +469,6 @@ public partial class MainViewModel : ObservableObject
             AppendLog($"[{label}] Failed: {ex.Message}");
             stage.Complete(false, ex.Message);
             return null;
-        }
-    }
-
-    /// <summary>
-    /// Reads the just-exported table back from its .dbf file and compares the row count against
-    /// what export reported writing, so a silent/partial export failure (e.g. the process dying
-    /// mid-write — see DbfExportService's native-crash risk) is visible in the UI instead of only
-    /// discoverable by inspecting the DBF folder directly. Never throws.
-    /// </summary>
-    private async Task VerifyDbfAsync(
-        string tableName,
-        string dbfFolder,
-        StageExportResult? exportResult,
-        Action<DataView?> setPreview,
-        Action<string> setStatusText,
-        Action<bool> setVerified)
-    {
-        var readResult = await Task.Run(() => _dbfReaderService.Read(dbfFolder, tableName));
-        setPreview(readResult.Success ? readResult.Table.DefaultView : null);
-
-        if (!readResult.Success)
-        {
-            setStatusText($"Could not verify: {readResult.ErrorMessage}");
-            setVerified(false);
-            return;
-        }
-
-        var expected = exportResult?.RowsWritten ?? 0;
-        var actual = readResult.RowCount;
-
-        if ((exportResult?.Success ?? false) && expected == actual)
-        {
-            setStatusText($"{tableName}: {actual} row(s) written and confirmed in DBF ✓");
-            setVerified(true);
-        }
-        else if (exportResult?.Success ?? false)
-        {
-            setStatusText($"{tableName}: wrote {expected} row(s) but DBF currently has {actual} ⚠");
-            setVerified(false);
-        }
-        else
-        {
-            setStatusText($"{tableName}: export failed — DBF currently has {actual} row(s) (may be from a previous run)");
-            setVerified(false);
         }
     }
 
