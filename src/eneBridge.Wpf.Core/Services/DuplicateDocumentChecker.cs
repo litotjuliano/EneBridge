@@ -8,10 +8,11 @@ namespace eneBridge.Wpf.Core.Services;
 /// for the same TYPE — i.e. the same document number for the same supplier/customer was already
 /// imported in an earlier run. DbfExportService.Export always appends now rather than recreating
 /// on collision, so nothing else in the pipeline prevents re-exporting the same source file twice
-/// from silently duplicating every row. This check is display/warning-only: it never blocks
-/// anything itself — callers decide what to do with the result (see
-/// eneBridge.Wpf.Services.DbfWorkflowHelper.ConfirmNoDuplicateDocuments for the UI-coupled
-/// Continue/Cancel prompt built on top of this).
+/// from silently duplicating every row. This check itself never blocks anything — it only reports
+/// which REFs are duplicates; the caller decides what to do (see
+/// eneBridge.Wpf.Services.DbfWorkflowHelper.ConfirmNoDuplicateDocuments, which turns a non-empty
+/// result into a hard block with no override, since a Continue/Cancel choice here would let a
+/// user click straight past the exact scenario this check exists to prevent).
 ///
 /// Two known gaps, not yet fixed (see CLAUDE.md's "Current status" section for the matching
 /// project-level writeup):

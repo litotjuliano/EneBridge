@@ -326,9 +326,13 @@ public partial class StockReceivedViewModel : ObservableObject
                 var duplicateRefs = await DuplicateDocumentChecker.FindDuplicateRefsAsync(_dbfReaderService, dbfFolder, "RE", icmasteCandidates);
                 if (!DbfWorkflowHelper.ConfirmNoDuplicateDocuments(duplicateRefs))
                 {
-                    cancelledByUser = true;
+                    // Deliberately NOT cancelledByUser: this is the system refusing to proceed
+                    // after detecting a real problem, not a user backing out of an ambiguous
+                    // situation (contrast the table-check cancel above). It still gets a Run
+                    // History entry, marked as a failure, so a blocked export leaves a record.
                     IcmasteDbfStatusText = "Run Confirm & Export to verify.";
                     IctraneDbfStatusText = "Run Confirm & Export to verify.";
+                    fatalError = $"Blocked: duplicate document(s) already exist for this supplier/customer: {string.Join(", ", duplicateRefs)}";
                     AppendLog($"Export blocked by the duplicate-document check ({duplicateRefs.Count} duplicate REF(s) found).");
                     return;
                 }
