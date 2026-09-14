@@ -332,8 +332,8 @@ public partial class StockReceivedViewModel : ObservableObject
                     // History entry, marked as a failure, so a blocked export leaves a record.
                     IcmasteDbfStatusText = "Run Confirm & Export to verify.";
                     IctraneDbfStatusText = "Run Confirm & Export to verify.";
-                    fatalError = $"Blocked: duplicate document(s) already exist for this supplier/customer: {string.Join(", ", duplicateRefs)}";
-                    AppendLog($"Export blocked by the duplicate-document check ({duplicateRefs.Count} duplicate REF(s) found).");
+                    fatalError = $"Blocked: {duplicateRefs.Count} duplicate document(s) already exist (see log)";
+                    AppendLog($"Export blocked by the duplicate-document check — already exist for this supplier/customer: {string.Join(", ", duplicateRefs)}");
                     return;
                 }
 
