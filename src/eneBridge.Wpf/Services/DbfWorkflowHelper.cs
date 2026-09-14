@@ -55,12 +55,14 @@ public static class DbfWorkflowHelper
     }
 
     /// <summary>
-    /// Warns (with a Continue/Cancel choice) if any of the given REFs already exist in icmaste.dbf
-    /// for this document's supplier/customer CODE — i.e. this exact document may already have been
+    /// Blocks the export — no override — if any of the given REFs already exist in icmaste.dbf for
+    /// this document's supplier/customer CODE — i.e. this exact document may already have been
     /// exported in an earlier run. DbfExportService.Export always appends now, so nothing else in
-    /// the pipeline catches this; re-clicking Confirm & Export (or re-importing the same file) would
-    /// otherwise silently duplicate every row for that document. Returns true to proceed
-    /// (no duplicates found, or the user chose to continue anyway), false to cancel the export.
+    /// the pipeline catches this; re-clicking Confirm &amp; Export (or re-importing the same file)
+    /// would otherwise silently duplicate every row for that document. Deliberately offers no
+    /// "continue anyway" choice: a Yes/No prompt here would let a user click straight past the
+    /// exact scenario this check exists to prevent, making the check pointless. Returns true only
+    /// when no duplicates are found; always false otherwise, after telling the user what to fix.
     /// </summary>
     public static bool ConfirmNoDuplicateDocuments(IReadOnlyList<string> duplicateRefs)
     {
@@ -70,17 +72,18 @@ public static class DbfWorkflowHelper
         }
 
         var refList = string.Join(", ", duplicateRefs);
-        var proceed = MessageBox.Show(
+        MessageBox.Show(
             $"The following document number(s) already exist in icmaste.dbf for this " +
             $"supplier/customer: {refList}\n\n" +
             "This usually means this file (or these rows) was already exported in an earlier " +
-            "run. Exporting again will duplicate these rows in the DBF files EMAS imports from.\n\n" +
-            "Continue anyway?",
+            "run. Export has been cancelled to prevent duplicating these rows in the DBF files " +
+            "EMAS imports from.\n\n" +
+            "Fix the source file or remove the existing rows in the DBF before exporting again.",
             "eneBridge - Duplicate Document Check",
-            MessageBoxButton.YesNo,
+            MessageBoxButton.OK,
             MessageBoxImage.Warning);
 
-        return proceed == MessageBoxResult.Yes;
+        return false;
     }
 
     /// <summary>

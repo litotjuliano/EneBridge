@@ -389,7 +389,7 @@ public partial class MainViewModel : ObservableObject
                     cancelledByUser = true;
                     IcmasteDbfStatusText = "Run Confirm & Export to verify.";
                     IctraneDbfStatusText = "Run Confirm & Export to verify.";
-                    AppendLog($"Export cancelled by user after the duplicate-document check ({duplicateRefs.Count} duplicate REF(s) found).");
+                    AppendLog($"Export blocked by the duplicate-document check ({duplicateRefs.Count} duplicate REF(s) found).");
                     return;
                 }
 
