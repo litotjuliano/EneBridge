@@ -147,6 +147,40 @@ OleDb-free for the same reason `DbfSafetyBackupService` is.
 actual bound DLL path (not just registry-key existence) so it correctly detects and fixes the
 Office Click-to-Run case instead of silently skipping the real fix.
 
+**Stock Received workflow**: a second, independent workflow (`StockReceivedViewModel`,
+`MainWindow.xaml`'s "Stock Received" tab) reads `Self-Billed_Format-ORI.xlsx`-shaped workbooks
+(`ExcelReaderService.ReadStockReceivedIcmaste`/`ReadStockReceivedIctrane`, driven by
+`StockReceivedExcelCol`) and writes into the SAME `icmaste.dbf`/`ictrane.dbf` Invoice writes to,
+distinguished by `TYPE` (`"RE"` vs Invoice's `"IN"`). See
+`docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md` for the full field mapping
+and rationale. This required changing `DbfExportService.Export` itself: it no longer backs up and
+recreates the table on every run — it now creates the table only if missing and always appends,
+for both workflows. `MainViewModel`'s and `StockReceivedViewModel`'s post-export verification
+correspondingly compares a before/after row-count delta (filtered by `TYPE`) instead of an
+absolute total, since rows now accumulate indefinitely rather than the file being replaced each
+run — there is no "start fresh" export anymore; resetting the live tables is a manual operation
+outside the app. The ACE-driver-crash-avoidance table check lives in the Wpf-project
+`Services/DbfWorkflowHelper.cs` (UI-coupled — shows a `MessageBox`); the delta-verification and
+row-counting logic it's paired with lives in the Core-project `Services/DbfVerificationHelper.cs`
+(pure, unit-tested). Both are shared between the two ViewModels rather than duplicated, since
+they're safety-critical; everything else in `StockReceivedViewModel` (read/export/preview
+plumbing) deliberately mirrors `MainViewModel`'s Invoice-related surface as a separate, parallel
+implementation rather than a shared base class, matching this project's existing philosophy of
+only sharing code across the two workflows when it's safety-critical. A separate Core-project
+`Services/ExportGateService.cs` enforces mutual exclusion between the two workflows' Confirm &
+Export commands: since both now write into the same physical DBF files, and the ACE OleDb driver
+has documented native-crash fragility under far milder stress (see "Known reliability risk"
+below), letting both workflows export concurrently was judged a real, newly-introduced crash risk
+once Stock Received started sharing Invoice's tables — a single shared gate instance, injected
+into both ViewModels, blocks one workflow's export while the other's is in progress and disables
+its Confirm & Export button (`CanExport`) accordingly. `StockReceivedViewModel` has its own Excel
+path (`SettingsService.ResolveEffectiveStockReceivedPaths`, staged to `stockreceived.xlsx`) and its
+own run history file (`%AppData%\eneBridge\stockReceivedRunHistory.json`), but shares Invoice's
+`DbfFolderPath` (the two must point at the same folder for append to mean anything) and the single
+app-wide ACE-driver health check (`MainViewModel` propagates its result to
+`StockReceivedViewModel` via `SetAceEngineHealth` whenever it changes, rather than running a
+second self-test).
+
 **Error handling**: nothing should ever crash the app or fail silently (the original did both,
 depending on which stage failed — see the git history / design notes for details if needed). Excel
 open failures and column-count validation failures are fatal for a stage; per-row parse/blank-field
@@ -195,7 +229,11 @@ against the real sample workbook (`tests/eneBridge.Wpf.Core.Tests/Fixtures/data.
 rows read → 3 written; ictrane: 110 rows read → 110 written). The running app has been manually driven end-to-end (path selection, Preview, Confirm &
 Export, run history) with correct results. The error-path testing (nonexistent Excel path, read-only DBF
 folder, corrupted cell values) called for in the original verification plan is now covered in
-`ExcelReaderServiceTests`, `DbfSchemaBuilderTests`, and `DbfExportServiceTests`.
+`ExcelReaderServiceTests`, `DbfSchemaBuilderTests`, and `DbfExportServiceTests`. **Not yet
+confirmed**: whether EMAS's Inventory Control module correctly handles `icmaste.dbf`/`ictrane.dbf`
+accumulating rows indefinitely across both workflows' runs (see "Stock Received workflow" above)
+— this needs to be watched the first few times both workflows are used against a real EMAS
+installation.
 
 **Known reliability risk, not yet fixed**: `DbfExportService.Export` catches a per-row
 `OleDbException` during INSERT and keeps reusing the same `OleDbConnection` for the remaining rows
