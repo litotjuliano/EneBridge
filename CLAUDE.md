@@ -286,9 +286,8 @@ imports from. Deleting a document inside EMAS removes it from `icmast.dbf`, not 
 which now accumulates forever (see "Stock Received workflow" above). Checking `icmaste.dbf` would
 therefore keep reporting a document as a duplicate even after the user deleted it from EMAS — this
 was hit in real client testing. `DuplicateDocumentChecker.FindDuplicateRefsAsync` reads
-`IcmasteSchema.LiveTableName` (`"icmast"`) instead, on the assumption (not independently verified
-from this codebase) that `icmast.dbf` shares `icmaste.dbf`'s column layout (same `REF`/`CODE`/`TYPE`
-names).
+`IcmasteSchema.LiveTableName` (`"icmast"`) instead — confirmed by the client to share
+`icmaste.dbf`'s column layout (same `REF`/`CODE`/`TYPE` names).
 
 **Known limitation: the duplicate-document check (`DuplicateDocumentChecker`) has two narrow gaps,
 not yet fixed.** First, it only reads `icmast.dbf` to detect a duplicate, on the assumption that

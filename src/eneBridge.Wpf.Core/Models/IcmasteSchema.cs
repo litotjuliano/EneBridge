@@ -19,8 +19,8 @@ public static class IcmasteSchema
     /// icmaste.dbf (eneBridge's own staging file, which now accumulates forever — see
     /// DbfExportService.Export). DuplicateDocumentChecker reads THIS table, not TableName, so a
     /// re-export correctly reflects what EMAS currently has, not just what eneBridge has ever
-    /// written. Assumed to share icmaste.dbf's column layout (same REF/CODE/TYPE names) since it's
-    /// the same EMAS Inventory Control schema — not independently verified from this codebase.
+    /// written. Confirmed by the client to share icmaste.dbf's column layout (same REF/CODE/TYPE
+    /// names, same EMAS Inventory Control schema).
     /// </summary>
     public const string LiveTableName = "icmast";
 
