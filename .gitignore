@@ -16,3 +16,6 @@ Thumbs.db
 
 # Brainstorming visual companion scratch files
 .superpowers/
+
+# Manual verification scratch DBF folder
+scratch-verify/

@@ -48,9 +48,9 @@ Invoice's `ExcelLayout`.
 | Supplier Name | 4 | NAME | icmaste |
 | Item Code | 5 | ITEM_NO | ictrane |
 | Item Description | 6 | DESC1 | ictrane |
-| Qty | 7 | DESC2 (as literal text, not the numeric qty field) | ictrane |
-| Unit Price | 8 | N_AMT | icmaste |
-| Total Amount | 9 | T_AMT | icmaste |
+| Qty | 7 | QTY | ictrane |
+| Unit Price | 8 | N_AMT, PRICE | icmaste, ictrane |
+| Total Amount | 9 | T_AMT, AMOUNT | icmaste, ictrane |
 
 Fixed constants (not read from Excel — `Self-Billed_Format-ORI.xlsx` has no source column for
 these at all):
@@ -70,8 +70,14 @@ workflows' rows inside the shared tables.
 Matching Invoice's existing defaults for fields Reference.xlsx doesn't mention (confirmed):
 `ENTRY`/`entry` = truncated REF, `USER`/`userid` = `"admin"`, `CURRCODE` = `"MYR"`.
 
-`ictrane.price`/`ictrane.amount` are left blank (confirmed) — Reference.xlsx maps Unit
-Price/Total Amount only to icmaste's N_AMT/T_AMT, not to ictrane's own numeric fields.
+**Correction (2026-09-15, after client UAT):** the original reading of Reference.xlsx above — that
+`ictrane.qty`/`price`/`amount` should be left blank, with Qty stuffed into `desc2` as literal text —
+was wrong. EMAS's own "Stock Received - Detail" screen displays `ictrane`'s numeric Qty/Price/Amount
+directly; leaving them blank meant every imported line showed 0.00/blank there, confirmed by the
+client testing an actual import. Qty/Unit Price/Total Amount now map to `ictrane.qty`/`price`/`amount`
+as real numeric values (same `TryParseOptionalDecimal` validation as `icmaste`'s `N_AMT`/`T_AMT` —
+blank defaults to 0, non-numeric skips the row), in addition to still populating `icmaste.N_AMT`/
+`T_AMT`. `ictrane.desc2` is no longer written at all (stays blank, matching Invoice's `ictrane.desc2`).
 
 A row is skipped (from both tables together — there is no per-table divergence here, unlike
 Invoice) if REF, DATE, CODE, NAME, or ITEM_NO is blank. Since every valid row produces exactly one

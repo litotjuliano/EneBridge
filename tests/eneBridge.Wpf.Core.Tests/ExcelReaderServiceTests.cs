@@ -475,12 +475,11 @@ public class ExcelReaderServiceTests
         Assert.Equal("SB-000001", row[IctraneSchema.Ref]);
         Assert.Equal("sub-con", row[IctraneSchema.ItemNo]);
         Assert.Equal("Sub Con Wages", row[IctraneSchema.Desc1]);
-        Assert.Equal("1", row[IctraneSchema.Desc2]);
         Assert.Equal("SST0", row[IctraneSchema.TaxCode]);
         Assert.Equal("admin", row[IctraneSchema.UserId]);
-        Assert.Equal(DBNull.Value, row[IctraneSchema.Price]);
-        Assert.Equal(DBNull.Value, row[IctraneSchema.Amount]);
-        Assert.Equal(DBNull.Value, row[IctraneSchema.Qty]);
+        Assert.Equal(1m, row[IctraneSchema.Qty]);
+        Assert.Equal(1000m, row[IctraneSchema.Price]);
+        Assert.Equal(1000m, row[IctraneSchema.Amount]);
     }
 
     [Fact]
@@ -546,6 +545,18 @@ public class ExcelReaderServiceTests
     }
 
     [Fact]
+    public void ReadStockReceivedIctrane_QtyNotNumeric_SkipsRowWithReason()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet(qtyValue: "abc");
+
+        var result = service.ReadStockReceivedIctrane(worksheet);
+
+        Assert.Single(result.SkipReasons);
+        Assert.Equal("Qty value 'abc' is not a valid number", result.SkipReasons[0].Reason);
+    }
+
+    [Fact]
     public void ReadStockReceivedIcmaste_NAmtNotNumeric_SkipsRowWithReason()
     {
         var service = new ExcelReaderService();
@@ -580,6 +591,20 @@ public class ExcelReaderServiceTests
         Assert.Single(result.Table.Rows);
         Assert.Equal(0m, result.Table.Rows[0][IcmasteSchema.NAmt]);
         Assert.Equal(0m, result.Table.Rows[0][IcmasteSchema.TAmt]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIctrane_QtyNAmtAndTAmtBlank_DefaultToZero()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet(qtyValue: " ", nAmtValue: " ", tAmtValue: " ");
+
+        var result = service.ReadStockReceivedIctrane(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal(0m, result.Table.Rows[0][IctraneSchema.Qty]);
+        Assert.Equal(0m, result.Table.Rows[0][IctraneSchema.Price]);
+        Assert.Equal(0m, result.Table.Rows[0][IctraneSchema.Amount]);
     }
 
     [Fact]

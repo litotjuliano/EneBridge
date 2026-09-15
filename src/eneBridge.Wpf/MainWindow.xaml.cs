@@ -45,7 +45,7 @@ public partial class MainWindow : Window
 
     private static readonly HashSet<string> StockReceivedIctranePopulatedColumns = new(StringComparer.OrdinalIgnoreCase)
     {
-        "type", "ref", "item_no", "desc1", "desc2", "taxcode", "userid", "entry"
+        "type", "ref", "item_no", "desc1", "qty", "price", "amount", "taxcode", "userid", "entry"
     };
 
     public MainWindow()
