@@ -278,20 +278,32 @@ using plain file I/O instead. `VerifyDbfAsync`'s own post-export read-back still
 `DbfReaderService.Read` and carries this same pre-existing exposure — untouched by this work,
 flagged here for whoever picks it up next.
 
+**Duplicate check reads EMAS's live table, not eneBridge's own staging file.** Confirmed against a
+real installation: `icmast.dbf`/`ictran.dbf` (no trailing "e") are EMAS's own live/master tables,
+separate physical files from `icmaste.dbf`/`ictrane.dbf` (`IcmasteSchema.TableName`/
+`IctraneSchema.TableName`) — the staging files eneBridge writes and EMAS's Inventory Control module
+imports from. Deleting a document inside EMAS removes it from `icmast.dbf`, not from `icmaste.dbf`,
+which now accumulates forever (see "Stock Received workflow" above). Checking `icmaste.dbf` would
+therefore keep reporting a document as a duplicate even after the user deleted it from EMAS — this
+was hit in real client testing. `DuplicateDocumentChecker.FindDuplicateRefsAsync` reads
+`IcmasteSchema.LiveTableName` (`"icmast"`) instead, on the assumption (not independently verified
+from this codebase) that `icmast.dbf` shares `icmaste.dbf`'s column layout (same `REF`/`CODE`/`TYPE`
+names).
+
 **Known limitation: the duplicate-document check (`DuplicateDocumentChecker`) has two narrow gaps,
-not yet fixed.** First, it only reads `icmaste.dbf` to detect a duplicate, on the assumption that
+not yet fixed.** First, it only reads `icmast.dbf` to detect a duplicate, on the assumption that
 a REF+CODE match there means the whole document — including its `ictrane` line items — was
-already exported. But `MainViewModel.ConfirmExportAsync`/`StockReceivedViewModel.ConfirmExportAsync`
+already imported. But `MainViewModel.ConfirmExportAsync`/`StockReceivedViewModel.ConfirmExportAsync`
 run icmaste's and ictrane's `DbfExportService.Export` calls as two independent stages (each via the
 shared `ExportStageAsync` helper, which catches its own exceptions and returns rather than
 propagating them), with no guard preventing the ictrane stage from running if the icmaste stage
 failed. So a run can write ictrane's rows for a document while icmaste's row for that same document
-fails to write; a later retry's duplicate check then reads only icmaste, correctly finds no match,
+fails to write; a later retry's duplicate check then reads only icmast, correctly finds no match,
 proceeds unwarned, and re-writes ictrane's already-present rows for that document — silently
 duplicating exactly the data this feature exists to prevent. Second,
 `DuplicateDocumentChecker.FindDuplicateRefsAsync` returns an empty list — treated as "no
 duplicates, safe to proceed" — whenever `DbfReaderService.Read`'s `Success` is `false`, and that
-fallback doesn't distinguish "icmaste.dbf doesn't exist yet" (a genuine first-ever-export case,
+fallback doesn't distinguish "icmast.dbf doesn't exist yet" (a genuine first-ever-export case,
 nothing to warn about) from "the table exists but the OleDb `SELECT` itself failed" (e.g. a
 structurally corrupt DBF, or the same ACE-driver native-crash-adjacent instability documented in
 the paragraph above around `DbfReaderService.Read`). In that second case the duplicate check

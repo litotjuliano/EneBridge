@@ -11,6 +11,19 @@ public static class IcmasteSchema
 {
     public const string TableName = "icmaste";
 
+    /// <summary>
+    /// EMAS's own live/master table (confirmed by the client against a real installation) — a
+    /// separate physical .dbf file in the same folder, distinct from <see cref="TableName"/>
+    /// (icmaste.dbf), which eneBridge writes as the staging file EMAS's Inventory Control module
+    /// imports from. Deleting a document inside EMAS removes it from icmast.dbf, not from
+    /// icmaste.dbf (eneBridge's own staging file, which now accumulates forever — see
+    /// DbfExportService.Export). DuplicateDocumentChecker reads THIS table, not TableName, so a
+    /// re-export correctly reflects what EMAS currently has, not just what eneBridge has ever
+    /// written. Assumed to share icmaste.dbf's column layout (same REF/CODE/TYPE names) since it's
+    /// the same EMAS Inventory Control schema — not independently verified from this codebase.
+    /// </summary>
+    public const string LiveTableName = "icmast";
+
     // Columns actually populated from Excel — see ExcelReaderService.
     public const string Type = "TYPE";
     public const string Entry = "ENTRY";
