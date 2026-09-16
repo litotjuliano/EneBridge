@@ -636,4 +636,68 @@ public class ExcelReaderServiceTests
             "The Excel file does not contain the required columns (found 5, need at least 10).",
             ex.Message);
     }
+
+    [Fact]
+    public void ValidateFileFormat_InvoiceExpected_StockReceivedHeaderPresent_Throws()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = NewWorksheet();
+        SetCell(worksheet, 1, 1, "Stock Received No");
+
+        var ex = Assert.Throws<ExcelValidationException>(
+            () => service.ValidateFileFormat(worksheet, ExcelFileFormat.Invoice));
+
+        Assert.Equal(
+            "This file looks like a Stock Received file (found a \"Stock Received No\" column), " +
+            "not an Invoice file. Please use the Stock Received tab, or browse to the correct Invoice file.",
+            ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFileFormat_InvoiceExpected_InvoiceHeaderPresent_DoesNotThrow()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = NewWorksheet();
+        SetCell(worksheet, 1, 8, "Invoice Number");
+
+        service.ValidateFileFormat(worksheet, ExcelFileFormat.Invoice);
+    }
+
+    [Fact]
+    public void ValidateFileFormat_StockReceivedExpected_InvoiceHeaderPresent_Throws()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = NewWorksheet();
+        SetCell(worksheet, 1, 8, "Invoice Number");
+
+        var ex = Assert.Throws<ExcelValidationException>(
+            () => service.ValidateFileFormat(worksheet, ExcelFileFormat.StockReceived));
+
+        Assert.Equal(
+            "This file looks like an Invoice file (found an \"Invoice Number\" column), " +
+            "not a Stock Received file. Please use the Invoice tab, or browse to the correct Stock Received file.",
+            ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFileFormat_StockReceivedExpected_StockReceivedHeaderPresent_DoesNotThrow()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = NewWorksheet();
+        SetCell(worksheet, 1, 1, "Stock Received No");
+
+        service.ValidateFileFormat(worksheet, ExcelFileFormat.StockReceived);
+    }
+
+    [Fact]
+    public void ValidateFileFormat_NeitherHeaderPresent_DoesNotThrow()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = NewWorksheet();
+        SetCell(worksheet, 1, 0, "No");
+        SetCell(worksheet, 1, 1, "Item Description");
+
+        service.ValidateFileFormat(worksheet, ExcelFileFormat.Invoice);
+        service.ValidateFileFormat(worksheet, ExcelFileFormat.StockReceived);
+    }
 }

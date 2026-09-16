@@ -3,9 +3,11 @@ using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Windows;
 using ClosedXML.Excel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using eneBridge.Wpf.Core.Exceptions;
 using eneBridge.Wpf.Core.Models;
 using eneBridge.Wpf.Core.Services;
 using eneBridge.Wpf.Services;
@@ -243,6 +245,19 @@ public partial class StockReceivedViewModel : ObservableObject
                 {
                     var workbook = openResult.Workbook;
                     var worksheet = workbook.Worksheets.First();
+
+                    try
+                    {
+                        _excelReaderService.ValidateFileFormat(worksheet, ExcelFileFormat.StockReceived);
+                    }
+                    catch (ExcelValidationException ex)
+                    {
+                        MessageBox.Show(ex.Message, "eneBridge - Wrong File Type", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        AppendLog($"Cannot preview: {ex.Message}");
+                        IcmasteStage.Fail(ex.Message);
+                        IctraneStage.Fail(ex.Message);
+                        return;
+                    }
 
                     _icmasteReadResult = await ReadStageAsync(
                         "icmaste",

@@ -185,6 +185,21 @@ app-wide ACE-driver health check (`MainViewModel` propagates its result to
 `StockReceivedViewModel` via `SetAceEngineHealth` whenever it changes, rather than running a
 second self-test).
 
+**Wrong-tab file detection**: `ExcelReaderService.ValidateFileFormat` sanity-checks a workbook's
+header row (row 1) against the tab it's being previewed on, before either format's row-by-row
+column mapping runs. Both formats read by fixed physical column position (see `ExcelLayout`) with
+no header-name dependency for the actual mapping, which means Browsing a Stock Received-shaped file
+into the Invoice tab (or vice versa) previously misaligned every column silently instead of failing
+loudly — confirmed against real client data: Invoice's DATE column position landed on Stock
+Received's Item Code column, producing a confusing "DATE parse failed: 'sub-con'" per-row skip
+reason instead of a clear error. `ValidateFileFormat` looks for each format's own distinguishing
+header text anywhere in row 1 (`"Invoice Number"` / `"Stock Received No"`, taken from the real
+sample workbooks) and throws `ExcelValidationException` before the mismatched read begins. Both
+`MainViewModel.PreviewAsync` and `StockReceivedViewModel.PreviewAsync` call it right after opening
+the workbook and catch that exception locally (rather than letting it fall through to the generic
+"Outer backstop" catch) to show a `MessageBox` naming the mismatch, with no override — a wrong file
+type is never a legitimate reason to proceed.
+
 **Error handling**: nothing should ever crash the app or fail silently (the original did both,
 depending on which stage failed — see the git history / design notes for details if needed). Excel
 open failures and column-count validation failures are fatal for a stage; per-row parse/blank-field

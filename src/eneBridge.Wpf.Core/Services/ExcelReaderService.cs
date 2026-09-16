@@ -351,6 +351,54 @@ public sealed class ExcelReaderService
         }
     }
 
+    private const string InvoiceHeaderText = "Invoice Number";
+    private const string StockReceivedHeaderText = "Stock Received No";
+
+    /// <summary>
+    /// Sanity-checks the header row (row 1) actually matches <paramref name="expectedFormat"/>
+    /// before row-by-row column mapping runs. Both Invoice and Stock Received read by fixed
+    /// physical column position (see <see cref="ExcelLayout"/>) with no header-name dependency for
+    /// the actual mapping -- which means nothing else catches the mistake of Browsing a Stock
+    /// Received-shaped file into the Invoice tab (or vice versa): every column silently misaligns
+    /// instead of failing loudly (confirmed against real client data -- Invoice's DATE column
+    /// position lands on Stock Received's Item Code column, producing a confusing "DATE parse
+    /// failed: 'sub-con'" per-row skip reason instead of a clear error). This looks for each
+    /// format's own distinguishing header text anywhere in row 1 (taken from the real sample
+    /// workbooks) and throws before either format's row-by-row read ever begins.
+    /// </summary>
+    public void ValidateFileFormat(IXLWorksheet worksheet, ExcelFileFormat expectedFormat)
+    {
+        var headerRow = worksheet.Row(ExcelLayout.HeaderRows);
+        bool hasInvoiceHeader = HeaderRowContains(headerRow, InvoiceHeaderText);
+        bool hasStockReceivedHeader = HeaderRowContains(headerRow, StockReceivedHeaderText);
+
+        if (expectedFormat == ExcelFileFormat.Invoice && hasStockReceivedHeader && !hasInvoiceHeader)
+        {
+            throw new ExcelValidationException(
+                $"This file looks like a Stock Received file (found a \"{StockReceivedHeaderText}\" column), " +
+                "not an Invoice file. Please use the Stock Received tab, or browse to the correct Invoice file.");
+        }
+
+        if (expectedFormat == ExcelFileFormat.StockReceived && hasInvoiceHeader && !hasStockReceivedHeader)
+        {
+            throw new ExcelValidationException(
+                $"This file looks like an Invoice file (found an \"{InvoiceHeaderText}\" column), " +
+                "not a Stock Received file. Please use the Invoice tab, or browse to the correct Stock Received file.");
+        }
+    }
+
+    private static bool HeaderRowContains(IXLRow headerRow, string text)
+    {
+        foreach (var cell in headerRow.CellsUsed())
+        {
+            if (string.Equals(cell.GetString().Trim(), text, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static string GetString(IXLWorksheet worksheet, int row, int zeroBasedColumn)
     {
         var cell = worksheet.Cell(row, zeroBasedColumn + 1);
