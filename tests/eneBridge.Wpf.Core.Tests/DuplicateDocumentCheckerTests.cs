@@ -5,13 +5,17 @@ using eneBridge.Wpf.Core.Services;
 namespace eneBridge.Wpf.Core.Tests;
 
 /// <summary>
-/// Real round-trip through the actual OleDb/ACE provider (no mocks), matching this codebase's
-/// established test style (see DbfVerificationHelperTests/DbfExportServiceTests) -- seeds
-/// "already exported" rows into icmaste.dbf (IcmasteSchema.TableName), the table
-/// FindDuplicateRefsAsync actually reads (NOT EMAS's live icmast.dbf -- that table turned out to be
-/// a Visual FoxPro file the ACE dBASE-IV driver can't parse at all; see DuplicateDocumentChecker's
-/// class-level doc comment), via a real DbfExportService.Export call rather than faking a
-/// DbfReadResult.
+/// Real round-trip (no mocks), matching this codebase's established test style (see
+/// DbfVerificationHelperTests/DbfExportServiceTests) -- seeds "already exported" rows into
+/// icmast.dbf (IcmasteSchema.LiveTableName, the table FindDuplicateRefsAsync actually reads) via a
+/// real DbfExportService.Export call, then reads them back with the actual FoxProDbfReader rather
+/// than faking a DbfReadResult. DbfExportService writes plain dBASE III bytes (not genuine Visual
+/// FoxPro), but FoxProDbfReader doesn't validate the version byte -- the field/record layout is
+/// identical across the dBASE/FoxPro family for character fields, which is all REF/CODE/TYPE are
+/// -- so this is a faithful test of the reader's actual parsing logic, exercised through this
+/// project's existing OleDb-based seeding helper instead of hand-built byte fixtures (that
+/// coverage lives in FoxProDbfReaderTests instead, including the real 0x30 Visual FoxPro version
+/// byte).
 /// </summary>
 public class DuplicateDocumentCheckerTests : IDisposable
 {
@@ -35,7 +39,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
         }
     }
 
-    private static void SeedIcmasteRow(string scratchFolder, string type, string reference, string code)
+    private static void SeedIcmastRow(string scratchFolder, string type, string reference, string code)
     {
         var dbfExporter = new DbfExportService();
         var table = IcmasteSchema.BuildEmptyTable();
@@ -45,17 +49,17 @@ public class DuplicateDocumentCheckerTests : IDisposable
         row[IcmasteSchema.Code] = code;
         table.Rows.Add(row);
 
-        var exportResult = dbfExporter.Export(scratchFolder, IcmasteSchema.TableName, table, IcmasteSchema.Columns);
+        var exportResult = dbfExporter.Export(scratchFolder, IcmasteSchema.LiveTableName, table, IcmasteSchema.Columns);
         Assert.True(exportResult.Success, exportResult.ErrorMessage);
     }
 
     [Fact]
     public async Task FindDuplicateRefsAsync_TableDoesNotExist_ReturnsEmpty()
     {
-        var dbfReader = new DbfReaderService();
+        var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
-        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(dbfReader, _scratchFolder, "IN", candidates);
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
         Assert.Empty(result);
     }
@@ -63,11 +67,11 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_NoCandidates_ReturnsEmpty()
     {
-        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
-        var dbfReader = new DbfReaderService();
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var foxProDbfReader = new FoxProDbfReader();
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(
-            dbfReader, _scratchFolder, "IN", Array.Empty<(string Ref, string Code)>());
+            foxProDbfReader, _scratchFolder, "IN", Array.Empty<(string Ref, string Code)>());
 
         Assert.Empty(result);
     }
@@ -75,11 +79,11 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_ExactRefAndCodeMatch_ReturnsThatRef()
     {
-        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
-        var dbfReader = new DbfReaderService();
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A"), ("Y", "B") };
 
-        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(dbfReader, _scratchFolder, "IN", candidates);
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
         Assert.Equal(new[] { "X" }, result);
     }
@@ -87,11 +91,11 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_SameRefDifferentCode_ReturnsEmpty()
     {
-        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
-        var dbfReader = new DbfReaderService();
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "B") };
 
-        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(dbfReader, _scratchFolder, "IN", candidates);
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
         Assert.Empty(result);
     }
@@ -99,11 +103,11 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_SameRefDifferentType_ReturnsEmpty()
     {
-        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
-        var dbfReader = new DbfReaderService();
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
-        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(dbfReader, _scratchFolder, "RE", candidates);
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "RE", candidates);
 
         Assert.Empty(result);
     }
@@ -111,11 +115,11 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_DuplicateCandidatesInInput_ReturnsDistinctRefs()
     {
-        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
-        var dbfReader = new DbfReaderService();
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A"), ("X", "A") };
 
-        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(dbfReader, _scratchFolder, "IN", candidates);
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
         Assert.Equal(new[] { "X" }, result);
     }

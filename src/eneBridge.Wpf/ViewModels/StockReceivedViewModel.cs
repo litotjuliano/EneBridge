@@ -25,6 +25,7 @@ public partial class StockReceivedViewModel : ObservableObject
     private readonly ExcelReaderService _excelReaderService;
     private readonly DbfExportService _dbfExportService;
     private readonly DbfReaderService _dbfReaderService;
+    private readonly FoxProDbfReader _foxProDbfReader;
     private readonly DbfSafetyBackupService _dbfSafetyBackupService;
     private readonly SettingsService _settingsService;
     private readonly RunHistoryService _runHistoryService;
@@ -93,6 +94,7 @@ public partial class StockReceivedViewModel : ObservableObject
         ExcelReaderService excelReaderService,
         DbfExportService dbfExportService,
         DbfReaderService dbfReaderService,
+        FoxProDbfReader foxProDbfReader,
         DbfSafetyBackupService dbfSafetyBackupService,
         SettingsService settingsService,
         RunHistoryService runHistoryService,
@@ -104,6 +106,7 @@ public partial class StockReceivedViewModel : ObservableObject
         _excelReaderService = excelReaderService;
         _dbfExportService = dbfExportService;
         _dbfReaderService = dbfReaderService;
+        _foxProDbfReader = foxProDbfReader;
         _dbfSafetyBackupService = dbfSafetyBackupService;
         _settingsService = settingsService;
         _runHistoryService = runHistoryService;
@@ -340,7 +343,7 @@ public partial class StockReceivedViewModel : ObservableObject
                 var icmasteCandidates = _icmasteReadResult!.Table.AsEnumerable()
                     .Select(row => (Ref: row[IcmasteSchema.Ref] as string ?? string.Empty, Code: row[IcmasteSchema.Code] as string ?? string.Empty))
                     .ToList();
-                var duplicateRefs = await DuplicateDocumentChecker.FindDuplicateRefsAsync(_dbfReaderService, dbfFolder, "RE", icmasteCandidates);
+                var duplicateRefs = await DuplicateDocumentChecker.FindDuplicateRefsAsync(_foxProDbfReader, dbfFolder, "RE", icmasteCandidates);
                 if (!DbfWorkflowHelper.ConfirmNoDuplicateDocuments(duplicateRefs))
                 {
                     // Deliberately NOT cancelledByUser: this is the system refusing to proceed

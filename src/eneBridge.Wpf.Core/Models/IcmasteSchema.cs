@@ -21,14 +21,12 @@ public static class IcmasteSchema
     /// REF/CODE/TYPE names, same EMAS Inventory Control schema) — but NOT its binary DBF format:
     /// icmast.dbf's version byte (0x30) marks it as Visual FoxPro, not the plain dBASE III (0x03)
     /// this app writes, so <c>Provider=Microsoft.ACE.OLEDB.12.0</c> with
-    /// <c>Extended Properties="dBASE IV"</c> cannot parse it at all (100% reproducible "External
-    /// table is not in the expected format", not intermittent), and attempting to was strongly
-    /// correlated with the native-crash class CLAUDE.md's "Known reliability risk" section
-    /// documents, confirmed against a real EMAS installation. DuplicateDocumentChecker was reverted
-    /// to reading <see cref="TableName"/> instead (see its class-level doc comment) — nothing
-    /// currently reads this table. Kept here as a named constant (rather than deleted) so whoever
-    /// implements a real fix (VFPOLEDB, or a hand-written FoxPro parser) has the confirmed table
-    /// name and format finding in one place.
+    /// <c>Extended Properties="dBASE IV"</c> (<see cref="DbfReaderService"/>) cannot parse it at all
+    /// (100% reproducible "External table is not in the expected format", not intermittent), and
+    /// attempting to was strongly correlated with the native-crash class CLAUDE.md's "Known
+    /// reliability risk" section documents, confirmed against a real EMAS installation.
+    /// <see cref="DuplicateDocumentChecker"/> reads this table via <see cref="FoxProDbfReader"/>
+    /// instead (pure managed byte parsing, no OleDb/COM involved) — see that class's doc comment.
     /// </summary>
     public const string LiveTableName = "icmast";
 

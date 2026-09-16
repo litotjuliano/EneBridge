@@ -30,6 +30,7 @@ public partial class App : Application
         var excelReaderService = new ExcelReaderService();
         var dbfExportService = new DbfExportService(fileLogger);
         var dbfReaderService = new DbfReaderService(fileLogger);
+        var foxProDbfReader = new FoxProDbfReader(fileLogger);
         var dbfSafetyBackupService = new DbfSafetyBackupService(fileLogger);
         var settingsService = new SettingsService(AppContext.BaseDirectory);
         var runHistoryService = new RunHistoryService();
@@ -42,6 +43,7 @@ public partial class App : Application
             excelReaderService,
             dbfExportService,
             dbfReaderService,
+            foxProDbfReader,
             dbfSafetyBackupService,
             settingsService,
             stockReceivedRunHistoryService,
@@ -55,6 +57,7 @@ public partial class App : Application
             excelReaderService,
             dbfExportService,
             dbfReaderService,
+            foxProDbfReader,
             dbfSafetyBackupService,
             settingsService,
             runHistoryService,
