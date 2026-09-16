@@ -245,11 +245,13 @@ public partial class StockReceivedViewModel : ObservableObject
                     var worksheet = workbook.Worksheets.First();
 
                     _icmasteReadResult = await ReadStageAsync(
+                        "icmaste",
                         IcmasteStage,
                         () => _excelReaderService.ReadStockReceivedIcmaste(worksheet),
                         result => IcmastePreview = result.Table.DefaultView);
 
                     _ictraneReadResult = await ReadStageAsync(
+                        "ictrane",
                         IctraneStage,
                         () => _excelReaderService.ReadStockReceivedIctrane(worksheet),
                         result => IctranePreview = result.Table.DefaultView);
@@ -409,14 +411,20 @@ public partial class StockReceivedViewModel : ObservableObject
         }
     }
 
-    /// <summary>Reads one table, updating the stage VM. Never throws.</summary>
+    /// <summary>Reads one table, logging skip reasons and updating the stage VM. Never throws.</summary>
     private async Task<StageReadResult> ReadStageAsync(
+        string label,
         StageProgressViewModel stage,
         Func<StageReadResult> read,
         Action<StageReadResult> onRead)
     {
         var readResult = await Task.Run(read);
         onRead(readResult);
+
+        foreach (var skipReason in readResult.SkipReasons)
+        {
+            AppendLog($"[{label}] Row {skipReason.ExcelRow}: {skipReason.Reason}");
+        }
 
         var readyCount = readResult.Table.Rows.Count;
         stage.Complete(true, $"Read {readResult.RowsRead}, skipped {readResult.SkipReasons.Count}, {readyCount} ready to export");

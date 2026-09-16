@@ -479,6 +479,11 @@ public partial class MainViewModel : ObservableObject
         var readResult = await Task.Run(read);
         onRead(readResult);
 
+        foreach (var skipReason in readResult.SkipReasons)
+        {
+            AppendLog($"[{label}] Row {skipReason.ExcelRow}: {skipReason.Reason}");
+        }
+
         var readyCount = readResult.Table.Rows.Count;
         stage.Complete(true, $"Read {readResult.RowsRead}, skipped {readResult.SkipReasons.Count}, {readyCount} ready to export");
 
