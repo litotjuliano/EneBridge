@@ -5,6 +5,19 @@ using eneBridge.Wpf.Core.Models;
 namespace eneBridge.Wpf.Core.Services;
 
 /// <summary>
+/// Whether <see cref="DuplicateDocumentChecker.FindDuplicateRefsAsync"/> was actually able to check
+/// EMAS's live data. <see cref="Verified"/> is false when icmast.dbf/ictran.dbf exist but couldn't
+/// be read (e.g. locked by EMAS itself being open) -- confirmed against a real installation as a
+/// genuine, common occurrence, not a rare edge case: the whole eneBridge workflow revolves around
+/// switching between it and EMAS, so EMAS being open (and holding these files) while a Confirm &amp;
+/// Export runs is an ordinary sequence, not a fluke. Earlier code treated a read failure the same as
+/// "table doesn't exist yet, nothing to duplicate against" and silently let the export proceed --
+/// confirmed directly to let a real duplicate document through uncaught. <see cref="DuplicateRefs"/>
+/// is only meaningful when <see cref="Verified"/> is true.
+/// </summary>
+public readonly record struct DuplicateCheckResult(bool Verified, IReadOnlyList<string> DuplicateRefs, string? UnverifiableReason = null);
+
+/// <summary>
 /// Detects rows about to be exported whose (REF, CODE) pair already exists in EMAS's live master
 /// table (icmast.dbf, <see cref="IcmasteSchema.LiveTableName"/>) for the same TYPE — i.e. the same
 /// document number for the same supplier/customer was already imported in an earlier run. Checks
@@ -34,26 +47,27 @@ namespace eneBridge.Wpf.Core.Services;
 /// testing — see its own class doc comment for the full story and the VFPOLEDB alternative that
 /// was considered and rejected (32-bit only, incompatible with this app's 64-bit process).
 ///
-/// This check itself never blocks anything — it only reports which REFs are duplicates; the caller
-/// decides what to do (see eneBridge.Wpf.Services.DbfWorkflowHelper.ConfirmNoDuplicateDocuments,
-/// which turns a non-empty result into a hard block with no override, since a Continue/Cancel
-/// choice here would let a user click straight past the exact scenario this check exists to
-/// prevent).
+/// This check itself never blocks anything — it only reports the result; the caller decides what to
+/// do (see eneBridge.Wpf.Services.DbfWorkflowHelper.ConfirmNoDuplicateDocuments, which turns either
+/// a non-empty duplicate list OR an unverifiable result into a hard block with no override, since a
+/// Continue/Cancel choice here would let a user click straight past the exact scenario this check
+/// exists to prevent).
 /// </summary>
 public static class DuplicateDocumentChecker
 {
     /// <summary>
-    /// Returns the distinct REF values among <paramref name="candidates"/> whose (Ref, Code) pair
-    /// already exists in EMAS's live icmast.dbf AND has at least one matching ictran.dbf line item,
-    /// for <paramref name="typeValue"/>, preserving first-seen order. Returns an empty list (not a
-    /// failure) if either table doesn't exist yet or can't currently be read — a first-ever export
-    /// has nothing to duplicate against, and this check must never throw or block an otherwise-valid
-    /// export on its own. Note that this same empty-list-for-that-table behavior also fires when a
-    /// table exists but the underlying read fails for some other reason (e.g. a structurally corrupt
-    /// or unexpectedly-shaped DBF) — that case is indistinguishable from "nothing there" to callers
-    /// today.
+    /// Checks whether any of <paramref name="candidates"/>' (Ref, Code) pairs already exist in
+    /// EMAS's live icmast.dbf AND have at least one matching ictran.dbf line item, for
+    /// <paramref name="typeValue"/>. <see cref="DuplicateCheckResult.Verified"/> is true (with an
+    /// empty or populated <see cref="DuplicateCheckResult.DuplicateRefs"/>) when both tables were
+    /// successfully read, OR when neither exists yet (a genuine first-ever export has nothing to
+    /// duplicate against — this check must never throw or block an otherwise-valid export on its
+    /// own in that case). <see cref="DuplicateCheckResult.Verified"/> is false when a table exists
+    /// but its read failed for some other reason (e.g. locked by EMAS being open) — the caller must
+    /// NOT treat that the same as "no duplicates found", since it means the check didn't actually
+    /// run.
     /// </summary>
-    public static async Task<IReadOnlyList<string>> FindDuplicateRefsAsync(
+    public static async Task<DuplicateCheckResult> FindDuplicateRefsAsync(
         FoxProDbfReader foxProDbfReader,
         string dbfFolder,
         string typeValue,
@@ -61,15 +75,31 @@ public static class DuplicateDocumentChecker
     {
         if (candidates.Count == 0)
         {
-            return Array.Empty<string>();
+            return new DuplicateCheckResult(true, Array.Empty<string>());
+        }
+
+        var icmastPath = Path.Combine(dbfFolder, IcmasteSchema.LiveTableName + ".dbf");
+        var ictranPath = Path.Combine(dbfFolder, IctraneSchema.LiveTableName + ".dbf");
+        if (!File.Exists(icmastPath) || !File.Exists(ictranPath))
+        {
+            // Genuinely nothing to duplicate against yet (e.g. a fresh test folder). In a real EMAS
+            // installation these shared master tables essentially always already exist, so this
+            // branch is mostly relevant to testing, not production.
+            return new DuplicateCheckResult(true, Array.Empty<string>());
         }
 
         var icmastResult = await Task.Run(() =>
             foxProDbfReader.Read(dbfFolder, IcmasteSchema.LiveTableName, IcmasteSchema.Type, typeValue));
-
         if (!icmastResult.Success)
         {
-            return Array.Empty<string>();
+            return new DuplicateCheckResult(false, Array.Empty<string>(), icmastResult.ErrorMessage);
+        }
+
+        var ictranResult = await Task.Run(() =>
+            foxProDbfReader.Read(dbfFolder, IctraneSchema.LiveTableName, IctraneSchema.Type, typeValue));
+        if (!ictranResult.Success)
+        {
+            return new DuplicateCheckResult(false, Array.Empty<string>(), ictranResult.ErrorMessage);
         }
 
         var icmastKeys = new HashSet<(string Ref, string Code)>();
@@ -80,14 +110,9 @@ public static class DuplicateDocumentChecker
             icmastKeys.Add((refValue, codeValue));
         }
 
-        var ictranResult = await Task.Run(() =>
-            foxProDbfReader.Read(dbfFolder, IctraneSchema.LiveTableName, IctraneSchema.Type, typeValue));
-
-        var ictranRefs = ictranResult.Success
-            ? ictranResult.Table.Rows.Cast<DataRow>()
-                .Select(row => row[IctraneSchema.Ref] as string ?? string.Empty)
-                .ToHashSet()
-            : new HashSet<string>();
+        var ictranRefs = ictranResult.Table.Rows.Cast<DataRow>()
+            .Select(row => row[IctraneSchema.Ref] as string ?? string.Empty)
+            .ToHashSet();
 
         var duplicates = new List<string>();
         foreach (var candidate in candidates)
@@ -99,6 +124,6 @@ public static class DuplicateDocumentChecker
                 duplicates.Add(candidate.Ref);
             }
         }
-        return duplicates;
+        return new DuplicateCheckResult(true, duplicates);
     }
 }

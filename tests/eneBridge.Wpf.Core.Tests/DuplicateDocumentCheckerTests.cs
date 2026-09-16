@@ -67,18 +67,19 @@ public class DuplicateDocumentCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task FindDuplicateRefsAsync_TableDoesNotExist_ReturnsEmpty()
+    public async Task FindDuplicateRefsAsync_TableDoesNotExist_VerifiedWithNoDuplicates()
     {
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
-        Assert.Empty(result);
+        Assert.True(result.Verified);
+        Assert.Empty(result.DuplicateRefs);
     }
 
     [Fact]
-    public async Task FindDuplicateRefsAsync_NoCandidates_ReturnsEmpty()
+    public async Task FindDuplicateRefsAsync_NoCandidates_VerifiedWithNoDuplicates()
     {
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
         SeedIctranRow(_scratchFolder, "IN", "X");
@@ -87,7 +88,8 @@ public class DuplicateDocumentCheckerTests : IDisposable
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(
             foxProDbfReader, _scratchFolder, "IN", Array.Empty<(string Ref, string Code)>());
 
-        Assert.Empty(result);
+        Assert.True(result.Verified);
+        Assert.Empty(result.DuplicateRefs);
     }
 
     [Fact]
@@ -100,7 +102,8 @@ public class DuplicateDocumentCheckerTests : IDisposable
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
-        Assert.Equal(new[] { "X" }, result);
+        Assert.True(result.Verified);
+        Assert.Equal(new[] { "X" }, result.DuplicateRefs);
     }
 
     [Fact]
@@ -111,24 +114,28 @@ public class DuplicateDocumentCheckerTests : IDisposable
         // delete", per the client) -- an icmast-only check would wrongly still block re-export of a
         // document EMAS's own screen could no longer even find.
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIctranRow(_scratchFolder, "IN", "Y"); // ictran.dbf exists and is readable, just has no match
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
-        Assert.Empty(result);
+        Assert.True(result.Verified);
+        Assert.Empty(result.DuplicateRefs);
     }
 
     [Fact]
-    public async Task FindDuplicateRefsAsync_IctranMatchButNoIcmastHeader_ReturnsEmpty()
+    public async Task FindDuplicateRefsAsync_IctranMatchButNoIcmastHeader_VerifiedWithNoDuplicates()
     {
+        SeedIcmastRow(_scratchFolder, "IN", "OTHER", "Z"); // icmast.dbf exists and is readable, just has no match
         SeedIctranRow(_scratchFolder, "IN", "X");
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
-        Assert.Empty(result);
+        Assert.True(result.Verified);
+        Assert.Empty(result.DuplicateRefs);
     }
 
     [Fact]
@@ -141,7 +148,8 @@ public class DuplicateDocumentCheckerTests : IDisposable
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
-        Assert.Empty(result);
+        Assert.True(result.Verified);
+        Assert.Empty(result.DuplicateRefs);
     }
 
     [Fact]
@@ -154,7 +162,8 @@ public class DuplicateDocumentCheckerTests : IDisposable
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "RE", candidates);
 
-        Assert.Empty(result);
+        Assert.True(result.Verified);
+        Assert.Empty(result.DuplicateRefs);
     }
 
     [Fact]
@@ -167,6 +176,44 @@ public class DuplicateDocumentCheckerTests : IDisposable
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
 
-        Assert.Equal(new[] { "X" }, result);
+        Assert.True(result.Verified);
+        Assert.Equal(new[] { "X" }, result.DuplicateRefs);
+    }
+
+    [Fact]
+    public async Task FindDuplicateRefsAsync_IcmastExistsButUnreadable_ReturnsUnverified()
+    {
+        // Confirmed as a real production bug, not a hypothetical: EMAS holding icmast.dbf/ictran.dbf
+        // open (an ordinary occurrence, since the whole workflow revolves around switching between
+        // eneBridge and EMAS) used to make FindDuplicateRefsAsync silently report "no duplicates"
+        // instead of "couldn't check" -- letting a real duplicate document through uncaught. A
+        // too-short file triggers the same kind of read failure (EndOfStreamException) a lock would.
+        var icmastPath = Path.Combine(_scratchFolder, IcmasteSchema.LiveTableName + ".dbf");
+        var ictranPath = Path.Combine(_scratchFolder, IctraneSchema.LiveTableName + ".dbf");
+        File.WriteAllBytes(icmastPath, new byte[] { 0x30 });
+        File.WriteAllBytes(ictranPath, new byte[] { 0x30 });
+        var foxProDbfReader = new FoxProDbfReader();
+        var candidates = new List<(string Ref, string Code)> { ("X", "A") };
+
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
+
+        Assert.False(result.Verified);
+        Assert.False(string.IsNullOrEmpty(result.UnverifiableReason));
+        Assert.Empty(result.DuplicateRefs);
+    }
+
+    [Fact]
+    public async Task FindDuplicateRefsAsync_IctranExistsButUnreadable_ReturnsUnverified()
+    {
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var ictranPath = Path.Combine(_scratchFolder, IctraneSchema.LiveTableName + ".dbf");
+        File.WriteAllBytes(ictranPath, new byte[] { 0x30 });
+        var foxProDbfReader = new FoxProDbfReader();
+        var candidates = new List<(string Ref, string Code)> { ("X", "A") };
+
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
+
+        Assert.False(result.Verified);
+        Assert.False(string.IsNullOrEmpty(result.UnverifiableReason));
     }
 }

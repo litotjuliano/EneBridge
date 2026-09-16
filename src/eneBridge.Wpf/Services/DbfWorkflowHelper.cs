@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using eneBridge.Wpf.Core.Models;
+using eneBridge.Wpf.Core.Services;
 
 namespace eneBridge.Wpf.Services;
 
@@ -55,23 +56,41 @@ public static class DbfWorkflowHelper
     }
 
     /// <summary>
-    /// Blocks the export — no override — if any of the given REFs already exist in EMAS's own live
-    /// data (icmast.dbf's header plus at least one ictran.dbf line item — see
-    /// DuplicateDocumentChecker's doc comment) for this document's supplier/customer CODE — i.e.
-    /// this exact document may already have been imported into EMAS in an earlier run.
-    /// Deliberately offers no "continue anyway" choice: a Yes/No prompt here would let a user click
-    /// straight past the exact scenario this check exists to prevent, making the check pointless.
-    /// Returns true only when no duplicates are found; always false otherwise, after telling the
-    /// user what to fix.
+    /// Blocks the export — no override — unless <paramref name="result"/> confirms neither a
+    /// duplicate was found nor the check itself failed to run. Deliberately offers no "continue
+    /// anyway" choice in either failure case: a Yes/No prompt here would let a user click straight
+    /// past the exact scenario this check exists to prevent, making the check pointless.
+    ///
+    /// Blocking on <see cref="DuplicateCheckResult.Verified"/> == false (not just on a populated
+    /// duplicate list) is itself the fix for a confirmed real bug: icmast.dbf/ictran.dbf being
+    /// briefly unreadable (e.g. locked because EMAS itself is open — an ordinary, common occurrence
+    /// in this app's normal workflow, not a fluke) used to be silently treated the same as "checked,
+    /// found nothing", letting a real duplicate document through with zero indication the check
+    /// never actually ran. Now that case blocks too, telling the user why.
     /// </summary>
-    public static bool ConfirmNoDuplicateDocuments(IReadOnlyList<string> duplicateRefs)
+    public static bool ConfirmNoDuplicateDocuments(DuplicateCheckResult result)
     {
-        if (duplicateRefs.Count == 0)
+        if (!result.Verified)
+        {
+            MessageBox.Show(
+                "Could not check EMAS's live data for duplicate documents (icmast.dbf/ictran.dbf " +
+                $"exist but couldn't be read):\n{result.UnverifiableReason}\n\n" +
+                "This usually means EMAS itself is currently open and holding these files. Close " +
+                "EMAS and try again — export has been cancelled rather than proceeding without " +
+                "this check.",
+                "eneBridge - Duplicate Document Check",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+
+            return false;
+        }
+
+        if (result.DuplicateRefs.Count == 0)
         {
             return true;
         }
 
-        var refList = string.Join(", ", duplicateRefs);
+        var refList = string.Join(", ", result.DuplicateRefs);
         MessageBox.Show(
             $"The following document number(s) already exist in EMAS for this " +
             $"supplier/customer: {refList}\n\n" +

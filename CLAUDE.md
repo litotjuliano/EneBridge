@@ -359,18 +359,27 @@ real `SB-000005` case (correctly no longer blocked) via a throwaway harness befo
 This incidentally also resolves the previously-documented gap where the check only read the header
 table and could be fooled by a partial prior export (icmaste's row failed to write while ictrane's
 succeeded, or vice versa): requiring both tables to agree catches that case too, in either
-direction. `DuplicateDocumentChecker.FindDuplicateRefsAsync` returns an empty list for a table —
-treated as "no duplicates, safe to proceed" for that table's half of the check — whenever
-`FoxProDbfReader.Read`'s `Success` is `false` for it, and that fallback doesn't distinguish
-"the table doesn't exist yet" (a genuine first-ever-export case, nothing to warn about) from "the
-table exists but is structurally corrupt or unexpectedly shaped" (`FoxProDbfReader.Read` never
-throws for this — see its own doc comment — but a badly malformed file could still produce garbage
-field values rather than a clean failure, since the parser trusts
-the header's declared record/field layout). In that second case the duplicate check silently does
-nothing and the export proceeds with zero indication to the user that the check
-didn't actually run. `DbfWorkflowHelper.ConfirmTablesReadable`, which runs earlier in the same
-`ConfirmExportAsync` flow, doesn't cover this either — it deliberately only does a plain-file-I/O
-readability probe (`File.Exists`/a shared `FileStream` open), not an actual OleDb `SELECT`, for the
-native-crash reasons explained above. This gap is rarer than the common case this feature targets
-(a user re-clicking Confirm & Export, or re-importing the same file, in one sitting, which the
-check correctly catches) — flagged here so it isn't lost if picked up later.
+direction.
+
+**Fixed: a table read failure (e.g. EMAS holding the file open) is no longer silently treated as
+"no duplicates".** `FindDuplicateRefsAsync` used to return an empty duplicate list whenever
+`FoxProDbfReader.Read`'s `Success` was `false` for either table, with no way for the caller to tell
+"the table doesn't exist yet" (a genuine first-ever-export case, safe to proceed) apart from "the
+table exists but couldn't be read for some other reason" (NOT safe to treat as "no duplicates" —
+the check simply didn't run). This was found to be a real, confirmed production bug, not a rare
+edge case: EMAS itself being open — an ordinary, frequent state, since the whole eneBridge workflow
+revolves around switching between it and EMAS's own Import Transaction screen — can hold
+`icmast.dbf`/`ictran.dbf` locked enough that `FoxProDbfReader.Read` fails, and a real duplicate
+document (confirmed directly: a document already imported into EMAS) was exported a second time
+with zero warning as a result. `DuplicateDocumentChecker.FindDuplicateRefsAsync` now returns a
+`DuplicateCheckResult` (`Verified`, `DuplicateRefs`, `UnverifiableReason`) instead of a bare list:
+`Verified` is `true` only when both tables were successfully read (or genuinely don't exist yet —
+checked via `File.Exists` before ever calling `FoxProDbfReader.Read`, so "doesn't exist" and "exists
+but unreadable" are distinguished up front rather than inferred from the read result).
+`DbfWorkflowHelper.ConfirmNoDuplicateDocuments` now hard-blocks (no override, same as a real
+duplicate) whenever `Verified` is `false`, telling the user the check couldn't run and to close
+EMAS and retry — silently proceeding is no longer an option. `DbfWorkflowHelper.ConfirmTablesReadable`,
+which runs earlier in the same `ConfirmExportAsync` flow, doesn't cover this case either — it
+deliberately only does a plain-file-I/O readability probe (`File.Exists`/a shared `FileStream`
+open) against `icmaste.dbf`/`ictrane.dbf` (the staging files), not `icmast.dbf`/`ictran.dbf` (the
+live tables `FindDuplicateRefsAsync` reads), for the native-crash reasons explained above.

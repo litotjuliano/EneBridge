@@ -400,8 +400,8 @@ public partial class MainViewModel : ObservableObject
                 var icmasteCandidates = _icmasteReadResult!.Table.AsEnumerable()
                     .Select(row => (Ref: row[IcmasteSchema.Ref] as string ?? string.Empty, Code: row[IcmasteSchema.Code] as string ?? string.Empty))
                     .ToList();
-                var duplicateRefs = await DuplicateDocumentChecker.FindDuplicateRefsAsync(_foxProDbfReader, dbfFolder, "IN", icmasteCandidates);
-                if (!DbfWorkflowHelper.ConfirmNoDuplicateDocuments(duplicateRefs))
+                var duplicateCheckResult = await DuplicateDocumentChecker.FindDuplicateRefsAsync(_foxProDbfReader, dbfFolder, "IN", icmasteCandidates);
+                if (!DbfWorkflowHelper.ConfirmNoDuplicateDocuments(duplicateCheckResult))
                 {
                     // Deliberately NOT cancelledByUser: this is the system refusing to proceed
                     // after detecting a real problem, not a user backing out of an ambiguous
@@ -409,8 +409,16 @@ public partial class MainViewModel : ObservableObject
                     // History entry, marked as a failure, so a blocked export leaves a record.
                     IcmasteDbfStatusText = "Run Confirm & Export to verify.";
                     IctraneDbfStatusText = "Run Confirm & Export to verify.";
-                    fatalError = $"Blocked: {duplicateRefs.Count} duplicate document(s) already exist (see log)";
-                    AppendLog($"Export blocked by the duplicate-document check — already exist for this supplier/customer: {string.Join(", ", duplicateRefs)}");
+                    if (!duplicateCheckResult.Verified)
+                    {
+                        fatalError = "Blocked: could not verify against EMAS's live data (see log)";
+                        AppendLog($"Export blocked — could not read EMAS's live data to check for duplicates: {duplicateCheckResult.UnverifiableReason}");
+                    }
+                    else
+                    {
+                        fatalError = $"Blocked: {duplicateCheckResult.DuplicateRefs.Count} duplicate document(s) already exist (see log)";
+                        AppendLog($"Export blocked by the duplicate-document check — already exist for this supplier/customer: {string.Join(", ", duplicateCheckResult.DuplicateRefs)}");
+                    }
                     return;
                 }
 
