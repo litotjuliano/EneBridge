@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4] - 2026-09-16
+- Fix Stock Received not saving Qty/Price/Amount values
+- Detect and warn when the wrong Excel file is used on a tab (Invoice vs Stock Received)
+- Fix a crash on Confirm & Export caused by the duplicate-document check
+- Fix duplicate-document check incorrectly blocking re-export of a deleted document
+- Revert DBF export to back up and recreate each run instead of appending, fixing duplicated line items in EMAS
+
 ## [1.0.3] - 2026-09-14
 - Stock Received Module
 
