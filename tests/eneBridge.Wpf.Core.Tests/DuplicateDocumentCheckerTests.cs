@@ -6,16 +6,16 @@ namespace eneBridge.Wpf.Core.Tests;
 
 /// <summary>
 /// Real round-trip (no mocks), matching this codebase's established test style (see
-/// DbfVerificationHelperTests/DbfExportServiceTests) -- seeds "already exported" rows into
-/// icmast.dbf (IcmasteSchema.LiveTableName, the table FindDuplicateRefsAsync actually reads) via a
-/// real DbfExportService.Export call, then reads them back with the actual FoxProDbfReader rather
-/// than faking a DbfReadResult. DbfExportService writes plain dBASE III bytes (not genuine Visual
-/// FoxPro), but FoxProDbfReader doesn't validate the version byte -- the field/record layout is
-/// identical across the dBASE/FoxPro family for character fields, which is all REF/CODE/TYPE are
-/// -- so this is a faithful test of the reader's actual parsing logic, exercised through this
-/// project's existing OleDb-based seeding helper instead of hand-built byte fixtures (that
-/// coverage lives in FoxProDbfReaderTests instead, including the real 0x30 Visual FoxPro version
-/// byte).
+/// DbfVerificationHelperTests/DbfExportServiceTests) -- seeds "already imported" rows into
+/// icmast.dbf/ictran.dbf (IcmasteSchema.LiveTableName/IctraneSchema.LiveTableName, the tables
+/// FindDuplicateRefsAsync actually reads) via real DbfExportService.Export calls, then reads them
+/// back with the actual FoxProDbfReader rather than faking a DbfReadResult. DbfExportService writes
+/// plain dBASE III bytes (not genuine Visual FoxPro), but FoxProDbfReader doesn't validate the
+/// version byte -- the field/record layout is identical across the dBASE/FoxPro family for
+/// character fields, which is all REF/CODE/TYPE are -- so this is a faithful test of the reader's
+/// actual parsing logic, exercised through this project's existing OleDb-based seeding helper
+/// instead of hand-built byte fixtures (that coverage lives in FoxProDbfReaderTests instead,
+/// including the real 0x30 Visual FoxPro version byte).
 /// </summary>
 public class DuplicateDocumentCheckerTests : IDisposable
 {
@@ -53,6 +53,19 @@ public class DuplicateDocumentCheckerTests : IDisposable
         Assert.True(exportResult.Success, exportResult.ErrorMessage);
     }
 
+    private static void SeedIctranRow(string scratchFolder, string type, string reference)
+    {
+        var dbfExporter = new DbfExportService();
+        var table = IctraneSchema.BuildEmptyTable();
+        var row = table.NewRow();
+        row[IctraneSchema.Type] = type;
+        row[IctraneSchema.Ref] = reference;
+        table.Rows.Add(row);
+
+        var exportResult = dbfExporter.Export(scratchFolder, IctraneSchema.LiveTableName, table, IctraneSchema.Columns);
+        Assert.True(exportResult.Success, exportResult.ErrorMessage);
+    }
+
     [Fact]
     public async Task FindDuplicateRefsAsync_TableDoesNotExist_ReturnsEmpty()
     {
@@ -68,6 +81,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     public async Task FindDuplicateRefsAsync_NoCandidates_ReturnsEmpty()
     {
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIctranRow(_scratchFolder, "IN", "X");
         var foxProDbfReader = new FoxProDbfReader();
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(
@@ -77,9 +91,10 @@ public class DuplicateDocumentCheckerTests : IDisposable
     }
 
     [Fact]
-    public async Task FindDuplicateRefsAsync_ExactRefAndCodeMatch_ReturnsThatRef()
+    public async Task FindDuplicateRefsAsync_IcmastAndIctranBothMatch_ReturnsThatRef()
     {
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIctranRow(_scratchFolder, "IN", "X");
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A"), ("Y", "B") };
 
@@ -89,9 +104,38 @@ public class DuplicateDocumentCheckerTests : IDisposable
     }
 
     [Fact]
+    public async Task FindDuplicateRefsAsync_IcmastMatchButNoIctranLineItems_ReturnsEmpty()
+    {
+        // Confirmed against a real EMAS installation: EMAS's own delete can leave an orphaned
+        // icmast.dbf header behind after removing a document's ictran.dbf line items (a "soft
+        // delete", per the client) -- an icmast-only check would wrongly still block re-export of a
+        // document EMAS's own screen could no longer even find.
+        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        var foxProDbfReader = new FoxProDbfReader();
+        var candidates = new List<(string Ref, string Code)> { ("X", "A") };
+
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task FindDuplicateRefsAsync_IctranMatchButNoIcmastHeader_ReturnsEmpty()
+    {
+        SeedIctranRow(_scratchFolder, "IN", "X");
+        var foxProDbfReader = new FoxProDbfReader();
+        var candidates = new List<(string Ref, string Code)> { ("X", "A") };
+
+        var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(foxProDbfReader, _scratchFolder, "IN", candidates);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
     public async Task FindDuplicateRefsAsync_SameRefDifferentCode_ReturnsEmpty()
     {
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIctranRow(_scratchFolder, "IN", "X");
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "B") };
 
@@ -104,6 +148,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     public async Task FindDuplicateRefsAsync_SameRefDifferentType_ReturnsEmpty()
     {
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIctranRow(_scratchFolder, "IN", "X");
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
@@ -116,6 +161,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     public async Task FindDuplicateRefsAsync_DuplicateCandidatesInInput_ReturnsDistinctRefs()
     {
         SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIctranRow(_scratchFolder, "IN", "X");
         var foxProDbfReader = new FoxProDbfReader();
         var candidates = new List<(string Ref, string Code)> { ("X", "A"), ("X", "A") };
 

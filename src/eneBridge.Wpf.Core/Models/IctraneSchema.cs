@@ -12,6 +12,19 @@ public static class IctraneSchema
 {
     public const string TableName = "ictrane";
 
+    /// <summary>
+    /// EMAS's own live/master table for line items — the ictran.dbf counterpart to
+    /// IcmasteSchema.LiveTableName's icmast.dbf (see that constant's doc comment for the format
+    /// details: Visual FoxPro, read via FoxProDbfReader, not OleDb). Used by
+    /// DuplicateDocumentChecker alongside icmast.dbf: a document is only treated as a genuine
+    /// duplicate if BOTH its header (icmast) and at least one line item (ictran) still exist for
+    /// that REF — confirmed against a real installation that EMAS's own delete can leave an
+    /// orphaned icmast header behind after removing a document's ictran line items (a "soft
+    /// delete", per the client), which an icmast-only check would incorrectly still block as a
+    /// duplicate.
+    /// </summary>
+    public const string LiveTableName = "ictran";
+
     // Columns actually populated from Excel — see ExcelReaderService.
     public const string Type = "type";
     public const string Entry = "entry";

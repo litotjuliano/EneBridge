@@ -345,28 +345,32 @@ avoids entirely, at the cost of implementing (a narrow slice of) the binary form
 real file (all active `RE`-type rows read correctly, the one deleted record correctly excluded) and
 against a full Confirm & Export run with no crash, before being wired in.
 
-**Known limitation: the duplicate-document check (`DuplicateDocumentChecker`) only reads
-`icmast.dbf`, not `ictran.dbf`, not yet fixed.** It assumes a REF+CODE match in `icmast.dbf` means
-the whole document — including its `ictrane` line items — was already imported. But
-`MainViewModel.ConfirmExportAsync`/`StockReceivedViewModel.ConfirmExportAsync` run icmaste's and
-ictrane's `DbfExportService.Export` calls as two independent stages (each via the shared
-`ExportStageAsync` helper, which catches its own exceptions and returns rather than propagating
-them), with no guard preventing the ictrane stage from running if the icmaste stage failed. So a
-run can write ictrane's rows for a document while icmaste's row for that same document fails to
-write; a later retry's duplicate check then reads only icmast, correctly finds no match, proceeds
-unwarned, and re-writes ictrane's already-present rows for that document — silently duplicating
-exactly the data this feature exists to prevent. Separately,
-`DuplicateDocumentChecker.FindDuplicateRefsAsync` returns an empty list — treated as "no
-duplicates, safe to proceed" — whenever `FoxProDbfReader.Read`'s `Success` is `false`, and that
-fallback doesn't distinguish "`icmast.dbf` doesn't exist yet" (a genuine first-ever-export case,
-nothing to warn about) from "the table exists but is structurally corrupt or unexpectedly shaped"
-(`FoxProDbfReader.Read` never throws for this — see its own doc comment — but a badly malformed
-file could still produce garbage field values rather than a clean failure, since the parser trusts
+**A REF only counts as a duplicate if BOTH `icmast.dbf` AND `ictran.dbf` have a match — not
+`icmast.dbf` alone.** Real testing found EMAS's own document delete is a "soft delete" (per the
+client) that removes a document's `ictran.dbf` line items but leaves its `icmast.dbf` header
+behind, orphaned — confirmed directly on a real installation: a deleted `SB-000005` was fully
+active in `icmast.dbf` (deletion flag clear, no void/cancel field set, every field still populated)
+while `ictran.dbf` had zero matching rows for it, and EMAS's own Stock Received screen could no
+longer find the document at all. An `icmast.dbf`-only check saw the leftover header and wrongly
+blocked re-export of a document EMAS itself no longer considered to exist.
+`DuplicateDocumentChecker.FindDuplicateRefsAsync` now also reads `IctraneSchema.LiveTableName`
+(`ictran.dbf`) and only reports a REF as a duplicate when both tables agree — verified against the
+real `SB-000005` case (correctly no longer blocked) via a throwaway harness before being wired in.
+This incidentally also resolves the previously-documented gap where the check only read the header
+table and could be fooled by a partial prior export (icmaste's row failed to write while ictrane's
+succeeded, or vice versa): requiring both tables to agree catches that case too, in either
+direction. `DuplicateDocumentChecker.FindDuplicateRefsAsync` returns an empty list for a table —
+treated as "no duplicates, safe to proceed" for that table's half of the check — whenever
+`FoxProDbfReader.Read`'s `Success` is `false` for it, and that fallback doesn't distinguish
+"the table doesn't exist yet" (a genuine first-ever-export case, nothing to warn about) from "the
+table exists but is structurally corrupt or unexpectedly shaped" (`FoxProDbfReader.Read` never
+throws for this — see its own doc comment — but a badly malformed file could still produce garbage
+field values rather than a clean failure, since the parser trusts
 the header's declared record/field layout). In that second case the duplicate check silently does
 nothing and the export proceeds with zero indication to the user that the check
 didn't actually run. `DbfWorkflowHelper.ConfirmTablesReadable`, which runs earlier in the same
 `ConfirmExportAsync` flow, doesn't cover this either — it deliberately only does a plain-file-I/O
 readability probe (`File.Exists`/a shared `FileStream` open), not an actual OleDb `SELECT`, for the
-native-crash reasons explained above. Both gaps are rarer than the common case this feature
-targets (a user re-clicking Confirm & Export, or re-importing the same file, in one sitting, which
-the check correctly catches) — flagged here so they aren't lost if picked up later.
+native-crash reasons explained above. This gap is rarer than the common case this feature targets
+(a user re-clicking Confirm & Export, or re-importing the same file, in one sitting, which the
+check correctly catches) — flagged here so it isn't lost if picked up later.
