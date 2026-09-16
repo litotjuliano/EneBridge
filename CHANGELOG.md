@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.0.5] - 2026-09-16
+- Fix duplicate-document check silently letting a re-export through when EMAS has the data files open (now blocks and asks you to close EMAS and retry)
+
 ## [1.0.4] - 2026-09-16
 - Fix Stock Received not saving Qty/Price/Amount values
 - Detect and warn when the wrong Excel file is used on a tab (Invoice vs Stock Received)
