@@ -17,10 +17,18 @@ public static class IcmasteSchema
     /// (icmaste.dbf), which eneBridge writes as the staging file EMAS's Inventory Control module
     /// imports from. Deleting a document inside EMAS removes it from icmast.dbf, not from
     /// icmaste.dbf (eneBridge's own staging file, which now accumulates forever — see
-    /// DbfExportService.Export). DuplicateDocumentChecker reads THIS table, not TableName, so a
-    /// re-export correctly reflects what EMAS currently has, not just what eneBridge has ever
-    /// written. Confirmed by the client to share icmaste.dbf's column layout (same REF/CODE/TYPE
-    /// names, same EMAS Inventory Control schema).
+    /// DbfExportService.Export). Confirmed by the client to share icmaste.dbf's column layout (same
+    /// REF/CODE/TYPE names, same EMAS Inventory Control schema) — but NOT its binary DBF format:
+    /// icmast.dbf's version byte (0x30) marks it as Visual FoxPro, not the plain dBASE III (0x03)
+    /// this app writes, so <c>Provider=Microsoft.ACE.OLEDB.12.0</c> with
+    /// <c>Extended Properties="dBASE IV"</c> cannot parse it at all (100% reproducible "External
+    /// table is not in the expected format", not intermittent), and attempting to was strongly
+    /// correlated with the native-crash class CLAUDE.md's "Known reliability risk" section
+    /// documents, confirmed against a real EMAS installation. DuplicateDocumentChecker was reverted
+    /// to reading <see cref="TableName"/> instead (see its class-level doc comment) — nothing
+    /// currently reads this table. Kept here as a named constant (rather than deleted) so whoever
+    /// implements a real fix (VFPOLEDB, or a hand-written FoxPro parser) has the confirmed table
+    /// name and format finding in one place.
     /// </summary>
     public const string LiveTableName = "icmast";
 

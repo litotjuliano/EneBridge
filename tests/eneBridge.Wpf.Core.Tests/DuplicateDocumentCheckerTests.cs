@@ -6,12 +6,12 @@ namespace eneBridge.Wpf.Core.Tests;
 
 /// <summary>
 /// Real round-trip through the actual OleDb/ACE provider (no mocks), matching this codebase's
-/// established test style (see DbfVerificationHelperTests/DbfExportServiceTests) -- seeds rows
-/// into icmast.dbf (IcmasteSchema.LiveTableName), the table FindDuplicateRefsAsync actually reads
-/// (EMAS's own live table, not eneBridge's icmaste.dbf staging file -- see DuplicateDocumentChecker's
+/// established test style (see DbfVerificationHelperTests/DbfExportServiceTests) -- seeds
+/// "already exported" rows into icmaste.dbf (IcmasteSchema.TableName), the table
+/// FindDuplicateRefsAsync actually reads (NOT EMAS's live icmast.dbf -- that table turned out to be
+/// a Visual FoxPro file the ACE dBASE-IV driver can't parse at all; see DuplicateDocumentChecker's
 /// class-level doc comment), via a real DbfExportService.Export call rather than faking a
-/// DbfReadResult. Reuses IcmasteSchema.Columns since icmast.dbf is assumed to share icmaste.dbf's
-/// column layout.
+/// DbfReadResult.
 /// </summary>
 public class DuplicateDocumentCheckerTests : IDisposable
 {
@@ -35,7 +35,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
         }
     }
 
-    private static void SeedIcmastRow(string scratchFolder, string type, string reference, string code)
+    private static void SeedIcmasteRow(string scratchFolder, string type, string reference, string code)
     {
         var dbfExporter = new DbfExportService();
         var table = IcmasteSchema.BuildEmptyTable();
@@ -45,7 +45,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
         row[IcmasteSchema.Code] = code;
         table.Rows.Add(row);
 
-        var exportResult = dbfExporter.Export(scratchFolder, IcmasteSchema.LiveTableName, table, IcmasteSchema.Columns);
+        var exportResult = dbfExporter.Export(scratchFolder, IcmasteSchema.TableName, table, IcmasteSchema.Columns);
         Assert.True(exportResult.Success, exportResult.ErrorMessage);
     }
 
@@ -63,7 +63,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_NoCandidates_ReturnsEmpty()
     {
-        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
         var dbfReader = new DbfReaderService();
 
         var result = await DuplicateDocumentChecker.FindDuplicateRefsAsync(
@@ -75,7 +75,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_ExactRefAndCodeMatch_ReturnsThatRef()
     {
-        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
         var dbfReader = new DbfReaderService();
         var candidates = new List<(string Ref, string Code)> { ("X", "A"), ("Y", "B") };
 
@@ -87,7 +87,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_SameRefDifferentCode_ReturnsEmpty()
     {
-        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
         var dbfReader = new DbfReaderService();
         var candidates = new List<(string Ref, string Code)> { ("X", "B") };
 
@@ -99,7 +99,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_SameRefDifferentType_ReturnsEmpty()
     {
-        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
         var dbfReader = new DbfReaderService();
         var candidates = new List<(string Ref, string Code)> { ("X", "A") };
 
@@ -111,7 +111,7 @@ public class DuplicateDocumentCheckerTests : IDisposable
     [Fact]
     public async Task FindDuplicateRefsAsync_DuplicateCandidatesInInput_ReturnsDistinctRefs()
     {
-        SeedIcmastRow(_scratchFolder, "IN", "X", "A");
+        SeedIcmasteRow(_scratchFolder, "IN", "X", "A");
         var dbfReader = new DbfReaderService();
         var candidates = new List<(string Ref, string Code)> { ("X", "A"), ("X", "A") };
 
