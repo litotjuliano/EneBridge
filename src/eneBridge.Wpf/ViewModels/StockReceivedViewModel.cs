@@ -357,26 +357,22 @@ public partial class StockReceivedViewModel : ObservableObject
                     return;
                 }
 
-                var icmasteBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
-                    _dbfReaderService, dbfFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "RE");
                 icmasteExport = await ExportStageAsync(
                     "icmaste",
                     IcmasteStage,
                     _icmasteReadResult!,
                     result => _dbfExportService.Export(dbfFolder, IcmasteSchema.TableName, result.Table, IcmasteSchema.Columns));
-                await DbfVerificationHelper.VerifyDbfDeltaAsync(
-                    _dbfReaderService, IcmasteSchema.TableName, dbfFolder, IcmasteSchema.Type, "RE", icmasteBeforeCount, icmasteExport,
+                await DbfVerificationHelper.VerifyDbfAsync(
+                    _dbfReaderService, IcmasteSchema.TableName, dbfFolder, IcmasteSchema.Type, "RE", icmasteExport,
                     v => IcmasteDbfPreview = v, s => IcmasteDbfStatusText = s, b => IcmasteDbfVerified = b);
 
-                var ictraneBeforeCount = await DbfVerificationHelper.CountRowsByTypeAsync(
-                    _dbfReaderService, dbfFolder, IctraneSchema.TableName, IctraneSchema.Type, "RE");
                 ictraneExport = await ExportStageAsync(
                     "ictrane",
                     IctraneStage,
                     _ictraneReadResult!,
                     result => _dbfExportService.Export(dbfFolder, IctraneSchema.TableName, result.Table, IctraneSchema.Columns));
-                await DbfVerificationHelper.VerifyDbfDeltaAsync(
-                    _dbfReaderService, IctraneSchema.TableName, dbfFolder, IctraneSchema.Type, "RE", ictraneBeforeCount, ictraneExport,
+                await DbfVerificationHelper.VerifyDbfAsync(
+                    _dbfReaderService, IctraneSchema.TableName, dbfFolder, IctraneSchema.Type, "RE", ictraneExport,
                     v => IctraneDbfPreview = v, s => IctraneDbfStatusText = s, b => IctraneDbfVerified = b);
             }
             catch (Exception ex)

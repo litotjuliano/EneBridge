@@ -6,7 +6,8 @@ namespace eneBridge.Wpf.Core.Tests;
 /// <summary>
 /// Real round-trip through the actual OleDb/ACE provider (no mocks), matching this codebase's
 /// established test style (see DbfExportServiceTests/DbfReaderServiceTests) -- verifies the
-/// append-aware before/after-delta logic that MainViewModel.ConfirmExportAsync now relies on.
+/// current-count-vs-RowsWritten check that MainViewModel.ConfirmExportAsync relies on, now that
+/// DbfExportService.Export backs up and recreates on every run (see its own doc comment).
 /// </summary>
 public class DbfVerificationHelperTests : IDisposable
 {
@@ -33,7 +34,29 @@ public class DbfVerificationHelperTests : IDisposable
     private static string FixturePath => Path.Combine(AppContext.BaseDirectory, "Fixtures", "data.xlsx");
 
     [Fact]
-    public async Task VerifyDbfDeltaAsync_TwoExportRunsInARow_ReportsCorrectDeltaEachTime()
+    public async Task VerifyDbfAsync_SuccessfulExport_ReportsVerified()
+    {
+        var excelReader = new ExcelReaderService();
+        var dbfExporter = new DbfExportService();
+        var dbfReader = new DbfReaderService();
+
+        using var workbook = excelReader.OpenWorkbook(FixturePath);
+        var worksheet = workbook.Worksheets.First();
+        var icmasteRead = excelReader.ReadIcmaste(worksheet);
+        var exportResult = dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
+
+        string? status = null;
+        bool? verified = null;
+        await DbfVerificationHelper.VerifyDbfAsync(
+            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", exportResult,
+            _ => { }, s => status = s, v => verified = v);
+
+        Assert.True(verified);
+        Assert.Contains("3 row(s) written and confirmed", status);
+    }
+
+    [Fact]
+    public async Task VerifyDbfAsync_SecondExportRun_ReplacesNotAccumulates_StillReportsVerified()
     {
         var excelReader = new ExcelReaderService();
         var dbfExporter = new DbfExportService();
@@ -43,42 +66,28 @@ public class DbfVerificationHelperTests : IDisposable
         var worksheet = workbook.Worksheets.First();
         var icmasteRead = excelReader.ReadIcmaste(worksheet);
 
-        // Run 1
-        var before1 = await DbfVerificationHelper.CountRowsByTypeAsync(dbfReader, _scratchFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
-        var export1 = dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
-        string? status1 = null;
-        bool? verified1 = null;
-        await DbfVerificationHelper.VerifyDbfDeltaAsync(
-            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", before1, export1,
-            _ => { }, s => status1 = s, v => verified1 = v);
+        dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
+        var secondExport = dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
 
-        Assert.Equal(0, before1);
-        Assert.True(verified1);
-        Assert.Contains("3 row(s) written and confirmed", status1);
+        string? status = null;
+        bool? verified = null;
+        await DbfVerificationHelper.VerifyDbfAsync(
+            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", secondExport,
+            _ => { }, s => status = s, v => verified = v);
 
-        // Run 2 -- same data exported again, rows should accumulate
-        var before2 = await DbfVerificationHelper.CountRowsByTypeAsync(dbfReader, _scratchFolder, IcmasteSchema.TableName, IcmasteSchema.Type, "IN");
-        var export2 = dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
-        string? status2 = null;
-        bool? verified2 = null;
-        await DbfVerificationHelper.VerifyDbfDeltaAsync(
-            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", before2, export2,
-            _ => { }, s => status2 = s, v => verified2 = v);
-
-        Assert.Equal(3, before2);
-        Assert.True(verified2);
-        Assert.Contains("3 row(s) written and confirmed", status2);
-        Assert.Contains("6 total", status2);
+        // Backed up and recreated, not accumulated -- still exactly 3, not 6.
+        Assert.True(verified);
+        Assert.Contains("3 row(s) written and confirmed", status);
     }
 
     [Fact]
-    public async Task VerifyDbfDeltaAsync_ExportFailed_ReportsFailureNotFalseSuccess()
+    public async Task VerifyDbfAsync_ExportFailed_ReportsFailureNotFalseSuccess()
     {
         // The table must already exist and be readable for this branch to be reachable at all --
-        // VerifyDbfDeltaAsync's own "table unreadable" branch takes priority over the "export
-        // failed" branch, since a failed read means there's no reliable row count to report either
-        // way. So seed a real, successful export first (creating icmaste.dbf), then simulate a
-        // *subsequent* export call failing against that now-existing table.
+        // VerifyDbfAsync's own "table unreadable" branch takes priority over the "export failed"
+        // branch, since a failed read means there's no reliable row count to report either way. So
+        // seed a real, successful export first (creating icmaste.dbf), then simulate a *subsequent*
+        // export call failing against that now-existing table.
         var excelReader = new ExcelReaderService();
         var dbfExporter = new DbfExportService();
         var dbfReader = new DbfReaderService();
@@ -92,8 +101,8 @@ public class DbfVerificationHelperTests : IDisposable
 
         string? status = null;
         bool? verified = null;
-        await DbfVerificationHelper.VerifyDbfDeltaAsync(
-            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", beforeCount: 0, failedExport,
+        await DbfVerificationHelper.VerifyDbfAsync(
+            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", failedExport,
             _ => { }, s => status = s, v => verified = v);
 
         Assert.False(verified);
@@ -101,13 +110,8 @@ public class DbfVerificationHelperTests : IDisposable
     }
 
     [Fact]
-    public async Task VerifyDbfDeltaAsync_ActualNewRowsNegative_ReportsFewerRowsMessage()
+    public async Task VerifyDbfAsync_RowCountMismatch_ReportsWarning()
     {
-        // Drive the actualNewRows < 0 sub-branch (rows appear to have disappeared since the
-        // "before" count was taken) without needing to actually delete real rows from a DBF: seed
-        // a real export (3 rows, per the fixture), then pass a beforeCount deliberately higher
-        // than the table's actual post-export row count, so readResult.RowCount - beforeCount
-        // computes negative even though the export itself reported success.
         var excelReader = new ExcelReaderService();
         var dbfExporter = new DbfExportService();
         var dbfReader = new DbfReaderService();
@@ -117,15 +121,17 @@ public class DbfVerificationHelperTests : IDisposable
         var icmasteRead = excelReader.ReadIcmaste(worksheet);
         dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
 
-        var exportResult = new StageExportResult { Success = true, RowsWritten = 3 };
+        // The real export wrote 3 rows; claim it wrote 5 to force a mismatch.
+        var mismatchedExportResult = new StageExportResult { Success = true, RowsWritten = 5 };
 
         string? status = null;
         bool? verified = null;
-        await DbfVerificationHelper.VerifyDbfDeltaAsync(
-            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", beforeCount: 10, exportResult,
+        await DbfVerificationHelper.VerifyDbfAsync(
+            dbfReader, IcmasteSchema.TableName, _scratchFolder, IcmasteSchema.Type, "IN", mismatchedExportResult,
             _ => { }, s => status = s, v => verified = v);
 
         Assert.False(verified);
-        Assert.Contains("FEWER", status);
+        Assert.Contains("wrote 5", status);
+        Assert.Contains("shows 3", status);
     }
 }

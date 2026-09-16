@@ -86,6 +86,22 @@ the two tables for a given run.
 
 ### 2. Export write path: append-always, both workflows
 
+**Reverted (2026-09-16, after real EMAS testing):** the append-always design described in this
+section was built, shipped, and then reverted back to the original "always back up and recreate"
+behavior this section describes changing away from. Real testing against an EMAS installation
+found that append-forever caused a worse problem than the one it solved: since neither eneBridge
+nor EMAS's own import ever trims the staging file, re-exporting a document already sitting in
+`ictrane.dbf` (e.g. after deleting it from EMAS and recreating it) left a second, duplicate set of
+line items once EMAS imported it — confirmed directly (2 identical line items for one document).
+Decompiling the original console app (`E:\Irene Projects\Working-Code\eneBridge\eneBridge.dll`)
+confirmed it always backed up and recreated on every run and never accumulated rows, which is what
+`DbfExportService.Export` was changed back to, on the client's explicit direction. The accepted
+tradeoff: Invoice and Stock Received sharing the same files now means exporting one wipes the
+other's not-yet-imported rows from the staging file if an EMAS import hasn't run in between — safe
+only when each export is immediately followed by an EMAS import. See `CLAUDE.md`'s "Stock Received
+workflow" section for the current, authoritative description; the rest of this section is kept for
+history.
+
 `DbfExportService.Export` changes from "always back up and recreate" to a single unconditional
 behavior: if `<dbfFolder>\<tableName>.dbf` doesn't exist yet, `CREATE TABLE` first (same DDL as
 today); either way, `INSERT` this run's rows into it. No mode flag, no configuration — this is now

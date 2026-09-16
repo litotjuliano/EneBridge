@@ -18,14 +18,26 @@ public sealed class DbfExportService
     }
 
     /// <summary>
-    /// Creates the DBF file if it doesn't exist yet, then inserts every row -- rows always
-    /// accumulate into the live file across calls, never replacing what's already there (see
-    /// docs/superpowers/specs/2026-09-14-stock-received-workflow-design.md for why: Invoice and
-    /// Stock Received both write into the same icmaste.dbf/ictrane.dbf, distinguished by TYPE, so
-    /// neither can be allowed to wipe out the other's rows). Do not reintroduce recreate-on-collision
-    /// here: Stock Received's rows depend on surviving across Invoice's runs, and vice versa. A
-    /// failure opening the connection / creating the table is fatal for this stage (Success=false);
-    /// a failure inserting a single row is recorded in RowErrors and the remaining rows still run.
+    /// Backs up any existing &lt;tableName&gt;.dbf (rename to a timestamped copy in the same
+    /// folder) and always creates the table fresh, then inserts this run's rows -- matching the
+    /// original console app's proven behavior exactly (confirmed by decompiling it: it backed up
+    /// and recreated on every run, and never accumulated rows across runs). An earlier iteration of
+    /// this feature changed Export to always append instead, specifically so Invoice and Stock
+    /// Received could share icmaste.dbf/ictrane.dbf without one wiping the other's rows -- but real
+    /// testing found this caused a different, worse problem: since neither eneBridge nor (per
+    /// observed behavior) EMAS's own import ever trims the staging file, every re-export of a
+    /// document already sitting in ictrane.dbf left a second, duplicate set of line items once
+    /// imported (confirmed against a real EMAS installation: deleting a document in EMAS, then
+    /// re-exporting it, produced two identical line items instead of one, because the old line
+    /// items were still physically sitting in ictrane.dbf and the new export only added to them).
+    /// Reverted to backup-and-recreate on the client's explicit direction, accepting the known
+    /// tradeoff: exporting one workflow (Invoice or Stock Received) now wipes the other's
+    /// not-yet-imported rows from the staging file if the EMAS import hasn't run yet in between --
+    /// safe only if each export is followed by an EMAS import before doing anything else, which
+    /// matches how the single-workflow original app was always used. See CLAUDE.md's "Stock
+    /// Received workflow" section for the full history. A failure opening the connection / creating
+    /// the table is fatal for this stage (Success=false); a failure inserting a single row is
+    /// recorded in RowErrors and the remaining rows still run.
     /// </summary>
     public StageExportResult Export(string dbfFolder, string tableName, DataTable data, IReadOnlyList<DbfColumnDefinition> schema)
     {
@@ -39,8 +51,7 @@ public sealed class DbfExportService
         try
         {
             Directory.CreateDirectory(dbfFolder);
-
-            var tableExists = File.Exists(Path.Combine(dbfFolder, tableName + ".dbf"));
+            BackupExistingFile(dbfFolder, tableName);
 
             var connectionString =
                 $@"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbfFolder};Extended Properties=""dBASE IV;CollatingSequence=1252"";";
@@ -50,16 +61,13 @@ public sealed class DbfExportService
             connection.Open();
             _fileLogger?.LogInfo($"[{tableName}] Connection opened");
 
-            if (!tableExists)
+            _fileLogger?.LogInfo($"[{tableName}] Running CREATE TABLE");
+            var createTableSql = DbfSchemaBuilder.BuildCreateTableSql(tableName, schema);
+            using (var createCommand = new OleDbCommand(createTableSql, connection))
             {
-                _fileLogger?.LogInfo($"[{tableName}] Table does not exist yet, running CREATE TABLE");
-                var createTableSql = DbfSchemaBuilder.BuildCreateTableSql(tableName, schema);
-                using (var createCommand = new OleDbCommand(createTableSql, connection))
-                {
-                    createCommand.ExecuteNonQuery();
-                }
-                _fileLogger?.LogInfo($"[{tableName}] CREATE TABLE succeeded");
+                createCommand.ExecuteNonQuery();
             }
+            _fileLogger?.LogInfo($"[{tableName}] CREATE TABLE succeeded");
 
             _fileLogger?.LogInfo($"[{tableName}] Inserting {data.Rows.Count} row(s)");
 
@@ -90,6 +98,25 @@ public sealed class DbfExportService
             _fileLogger?.LogException($"[{tableName}] Export failed", ex);
             return new StageExportResult { Success = false, ErrorMessage = ex.Message, RowErrors = rowErrors };
         }
+    }
+
+    /// <summary>
+    /// Renames an existing &lt;tableName&gt;.dbf to a timestamped copy in the same folder, matching
+    /// the original console app's exact naming convention (confirmed by decompiling it) --
+    /// &lt;tableName&gt;_yyyyMMddHHmmss.dbf. No retention limit, same as the original: these backups
+    /// are never deleted by this app. A no-op if the file doesn't exist yet (first-ever export).
+    /// </summary>
+    private static void BackupExistingFile(string dbfFolder, string tableName)
+    {
+        var dbfPath = Path.Combine(dbfFolder, tableName + ".dbf");
+        if (!File.Exists(dbfPath))
+        {
+            return;
+        }
+
+        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        var backupPath = Path.Combine(dbfFolder, $"{tableName}_{timestamp}.dbf");
+        File.Move(dbfPath, backupPath);
     }
 
     private static string BuildInsertSql(string tableName, DataTable table, DataRow row)

@@ -68,7 +68,7 @@ public class DbfExportServiceTests : IDisposable
     }
 
     [Fact]
-    public void Export_SecondRun_AppendsRowsInsteadOfReplacing()
+    public void Export_SecondRun_BacksUpPreviousFileInsteadOfAccumulating()
     {
         var excelReader = new ExcelReaderService();
         var dbfExporter = new DbfExportService();
@@ -81,15 +81,19 @@ public class DbfExportServiceTests : IDisposable
         Assert.True(firstExport.Success, firstExport.ErrorMessage);
         Assert.Equal(3, firstExport.RowsWritten);
 
+        // Ensure the backup timestamp (second-resolution) differs from the first export.
+        Thread.Sleep(1100);
+
         var secondExport = dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, icmasteRead.Table, IcmasteSchema.Columns);
         Assert.True(secondExport.Success, secondExport.ErrorMessage);
         Assert.Equal(3, secondExport.RowsWritten);
 
-        // No backup-rename file is ever created now -- rows accumulate in the live file instead.
-        Assert.Empty(Directory.GetFiles(_scratchFolder, "icmaste_*.dbf"));
+        var backups = Directory.GetFiles(_scratchFolder, "icmaste_*.dbf");
+        Assert.Single(backups);
         Assert.True(File.Exists(Path.Combine(_scratchFolder, "icmaste.dbf")));
 
-        AssertRowCount("icmaste", 6);
+        // The live file reflects only the second run's rows -- not accumulated with the first's.
+        AssertRowCount("icmaste", 3);
     }
 
     [Fact]
