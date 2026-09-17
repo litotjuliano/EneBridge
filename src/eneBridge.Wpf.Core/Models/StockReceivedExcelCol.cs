@@ -16,10 +16,22 @@ public static class StockReceivedExcelCol
     public const int Name = 4;
     public const int ItemNo = 5;
     public const int Desc1 = 6;
-    public const int Qty = 7;
-    public const int NAmt = 8;
-    public const int TAmt = 9;
 
-    /// <summary>Minimum raw column count required (through Total Amount at index 9).</summary>
-    public const int MinColumnCount = 10;
+    /// <summary>
+    /// "Item Description 2" -- added to the template after the original 10-column layout was
+    /// reverse-engineered (confirmed against a client-provided sample workbook and the client's
+    /// own reference workbook, both dated 2026-09-17), shifting Qty/NAmt/TAmt each one column to
+    /// the right. Maps to <see cref="Models.IctraneSchema.Desc2"/>, a column already present (and
+    /// already blank in real production data, confirmed via a live EMAS ictran.dbf screenshot) --
+    /// this just starts populating it. Optional: the reference workbook's own sample rows leave it
+    /// blank, so a blank cell here is not a row-skip condition.
+    /// </summary>
+    public const int Desc2 = 7;
+
+    public const int Qty = 8;
+    public const int NAmt = 9;
+    public const int TAmt = 10;
+
+    /// <summary>Minimum raw column count required (through Total Amount at index 10).</summary>
+    public const int MinColumnCount = 11;
 }

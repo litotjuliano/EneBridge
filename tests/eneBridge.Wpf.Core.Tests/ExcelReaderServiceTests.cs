@@ -413,7 +413,7 @@ public class ExcelReaderServiceTests
     private static void SetStockReceivedRow(
         IXLWorksheet worksheet, int row, string? refValue, string? dateValue, string? codeValue, string? nameValue,
         string? itemNoValue, string? desc1Value = "ITEM DESC", string? qtyValue = "1", string? nAmtValue = "100",
-        string? tAmtValue = "100")
+        string? tAmtValue = "100", string? desc2Value = null)
     {
         SetCell(worksheet, row, StockReceivedExcelCol.Ref, refValue);
         SetCell(worksheet, row, StockReceivedExcelCol.Date, dateValue);
@@ -421,6 +421,7 @@ public class ExcelReaderServiceTests
         SetCell(worksheet, row, StockReceivedExcelCol.Name, nameValue);
         SetCell(worksheet, row, StockReceivedExcelCol.ItemNo, itemNoValue);
         SetCell(worksheet, row, StockReceivedExcelCol.Desc1, desc1Value);
+        SetCell(worksheet, row, StockReceivedExcelCol.Desc2, desc2Value);
         SetCell(worksheet, row, StockReceivedExcelCol.Qty, qtyValue);
         SetCell(worksheet, row, StockReceivedExcelCol.NAmt, nAmtValue);
         SetCell(worksheet, row, StockReceivedExcelCol.TAmt, tAmtValue);
@@ -429,10 +430,10 @@ public class ExcelReaderServiceTests
     private static IXLWorksheet BuildStockReceivedWorksheet(
         string? refValue = "SB-000001", string? dateValue = "2026-09-01", string? codeValue = "4000T001",
         string? nameValue = "TAN KANG KAE", string? itemNoValue = "sub-con", string? desc1Value = "Sub Con Wages",
-        string? qtyValue = "1", string? nAmtValue = "1000", string? tAmtValue = "1000")
+        string? qtyValue = "1", string? nAmtValue = "1000", string? tAmtValue = "1000", string? desc2Value = null)
     {
         var worksheet = NewWorksheet();
-        SetStockReceivedRow(worksheet, ExcelLayout.FirstDataRow, refValue, dateValue, codeValue, nameValue, itemNoValue, desc1Value, qtyValue, nAmtValue, tAmtValue);
+        SetStockReceivedRow(worksheet, ExcelLayout.FirstDataRow, refValue, dateValue, codeValue, nameValue, itemNoValue, desc1Value, qtyValue, nAmtValue, tAmtValue, desc2Value);
         return worksheet;
     }
 
@@ -480,6 +481,30 @@ public class ExcelReaderServiceTests
         Assert.Equal(1m, row[IctraneSchema.Qty]);
         Assert.Equal(1000m, row[IctraneSchema.Price]);
         Assert.Equal(1000m, row[IctraneSchema.Amount]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIctrane_Desc2Populated_MapsToDesc2()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet(desc2Value: "PROJECT A");
+
+        var result = service.ReadStockReceivedIctrane(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal("PROJECT A", result.Table.Rows[0][IctraneSchema.Desc2]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIctrane_Desc2Blank_MapsToEmptyString()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet();
+
+        var result = service.ReadStockReceivedIctrane(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal(string.Empty, result.Table.Rows[0][IctraneSchema.Desc2]);
     }
 
     [Fact]
@@ -618,7 +643,7 @@ public class ExcelReaderServiceTests
         var ex = Assert.Throws<ExcelValidationException>(() => service.ReadStockReceivedIcmaste(worksheet));
 
         Assert.Equal(
-            "The Excel file does not contain the required columns (found 5, need at least 10).",
+            "The Excel file does not contain the required columns (found 5, need at least 11).",
             ex.Message);
     }
 
@@ -633,7 +658,7 @@ public class ExcelReaderServiceTests
         var ex = Assert.Throws<ExcelValidationException>(() => service.ReadStockReceivedIctrane(worksheet));
 
         Assert.Equal(
-            "The Excel file does not contain the required columns (found 5, need at least 10).",
+            "The Excel file does not contain the required columns (found 5, need at least 11).",
             ex.Message);
     }
 

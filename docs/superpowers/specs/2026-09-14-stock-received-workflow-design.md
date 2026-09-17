@@ -79,6 +79,31 @@ as real numeric values (same `TryParseOptionalDecimal` validation as `icmaste`'s
 blank defaults to 0, non-numeric skips the row), in addition to still populating `icmaste.N_AMT`/
 `T_AMT`. `ictrane.desc2` is no longer written at all (stays blank, matching Invoice's `ictrane.desc2`).
 
+**Correction (2026-09-17, client added a column):** the client's Stock Received template gained a
+new "Item Description 2" column at Excel index 7, between Item Description and Qty, pushing
+Qty/Unit Price/Total Amount to indices 8/9/10. Confirmed as the client's new standing template (not
+a one-off) against a second reference file that uses the same 11-column layout. This column maps to
+`ictrane.desc2` — so `ictrane.desc2` above is no longer permanently blank, it's just not written for
+files still on the old 10-column layout (which now fail column-count validation outright rather
+than reading with misaligned data). See `CLAUDE.md`'s "Stock Received template gained an 'Item
+Description 2' column" for the full story, including how a client-supplied EMAS `ictran.dbf`
+screenshot both confirmed `desc2` is a real currently-blank production column and reconfirmed the
+Qty/Price/Amount correction above is still correct.
+
+| Excel column | Index | EMAS field | Table |
+|---|---|---|---|
+| No | 0 | *(unused — not mapped to any field)* | — |
+| Stock Received No | 1 | REF | icmaste, ictrane |
+| Date | 2 | DATE | icmaste |
+| Supplier Code | 3 | CODE | icmaste |
+| Supplier Name | 4 | NAME | icmaste |
+| Item Code | 5 | ITEM_NO | ictrane |
+| Item Description | 6 | DESC1 | ictrane |
+| Item Description 2 | 7 | DESC2 | ictrane |
+| Qty | 8 | QTY | ictrane |
+| Unit Price | 9 | N_AMT, PRICE | icmaste, ictrane |
+| Total Amount | 10 | T_AMT, AMOUNT | icmaste, ictrane |
+
 A row is skipped (from both tables together — there is no per-table divergence here, unlike
 Invoice) if REF, DATE, CODE, NAME, or ITEM_NO is blank. Since every valid row produces exactly one
 icmaste row and one ictrane row with no deduping, `RowsRead`/`SkipReasons` are identical between

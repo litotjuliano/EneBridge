@@ -189,7 +189,7 @@ public sealed class ExcelReaderService
     }
 
     private readonly record struct StockReceivedRowFields(
-        string Ref, DateTime Date, string Code, string Name, string ItemNo, string Desc1, decimal Qty, decimal NAmt, decimal TAmt);
+        string Ref, DateTime Date, string Code, string Name, string ItemNo, string Desc1, string Desc2, decimal Qty, decimal NAmt, decimal TAmt);
 
     /// <summary>
     /// Shared validation for both ReadStockReceivedIcmaste and ReadStockReceivedIctrane -- every
@@ -222,6 +222,7 @@ public sealed class ExcelReaderService
         }
 
         string desc1Value = GetString(worksheet, excelRow, StockReceivedExcelCol.Desc1);
+        string desc2Value = GetString(worksheet, excelRow, StockReceivedExcelCol.Desc2);
 
         string qtyRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.Qty);
         if (!TryParseOptionalDecimal(qtyRaw, "Qty", excelRow, skipReasons, out var qtyOpt)) { return null; }
@@ -232,7 +233,7 @@ public sealed class ExcelReaderService
         string tAmtRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.TAmt);
         if (!TryParseOptionalDecimal(tAmtRaw, "Total Amount", excelRow, skipReasons, out var tAmtOpt)) { return null; }
 
-        return new StockReceivedRowFields(refValue, date, codeValue, nameValue, itemNoValue, desc1Value, qtyOpt ?? 0m, nAmtOpt ?? 0m, tAmtOpt ?? 0m);
+        return new StockReceivedRowFields(refValue, date, codeValue, nameValue, itemNoValue, desc1Value, desc2Value, qtyOpt ?? 0m, nAmtOpt ?? 0m, tAmtOpt ?? 0m);
     }
 
     /// <summary>
@@ -312,6 +313,7 @@ public sealed class ExcelReaderService
             row[IctraneSchema.Ref] = TextTruncation.Truncate(fields.Value.Ref, 11);
             row[IctraneSchema.ItemNo] = TextTruncation.Truncate(fields.Value.ItemNo, 24);
             row[IctraneSchema.Desc1] = TextTruncation.Truncate(fields.Value.Desc1, 60);
+            row[IctraneSchema.Desc2] = TextTruncation.Truncate(fields.Value.Desc2, 40);
             row[IctraneSchema.Qty] = fields.Value.Qty;
             row[IctraneSchema.Price] = fields.Value.NAmt;
             row[IctraneSchema.Amount] = fields.Value.TAmt;

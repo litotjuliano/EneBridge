@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.0.6] - 2026-09-17
+- Support the new "Item Description 2" column in the Stock Received Excel template (fixes "Qty value is not a valid number" when the template has this extra column)
+
 ## [1.0.5] - 2026-09-16
 - Fix duplicate-document check silently letting a re-export through when EMAS has the data files open (now blocks and asks you to close EMAS and retry)
 

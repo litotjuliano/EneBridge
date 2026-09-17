@@ -383,3 +383,23 @@ which runs earlier in the same `ConfirmExportAsync` flow, doesn't cover this cas
 deliberately only does a plain-file-I/O readability probe (`File.Exists`/a shared `FileStream`
 open) against `icmaste.dbf`/`ictrane.dbf` (the staging files), not `icmast.dbf`/`ictran.dbf` (the
 live tables `FindDuplicateRefsAsync` reads), for the native-crash reasons explained above.
+
+**Stock Received template gained an "Item Description 2" column.** A client-provided
+`sample.xlsx` (2026-09-17) failed with "Qty value 'PROJECT A' is not a valid number" — the client
+had inserted a new "Item Description 2" column at physical column H, between Item Description and
+Qty, shifting Qty/Unit Price/Total Amount one column to the right of what `StockReceivedExcelCol`
+expected. Confirmed as the client's new standing template, not a one-off mistake, by cross-checking
+against a second file the client pointed to as a reference (`Self-Billed_Format.xlsx`, also
+2026-09-17): it uses the identical 11-column layout with the same extra column at H, just leaving
+it blank in its own sample rows. `StockReceivedExcelCol.Desc2` (index 7) was added and
+`Qty`/`NAmt`/`TAmt` shifted to 8/9/10 (`MinColumnCount` 10 → 11); `ExcelReaderService`'s
+`ReadStockReceivedRowFields`/`ReadStockReceivedIctrane` now read it and populate
+`IctraneSchema.Desc2` (a column that already existed in the schema, unused until now). This isn't
+optional/backward-compatible with the older 10-column layout — a workbook without the new column
+now fails `ValidateColumnCount` outright — because both of the client's current files (the one that
+broke and the one offered as the authoritative reference) already agree on the new 11-column shape.
+Confirmed against a live EMAS `ictran.dbf` screenshot (client-provided, part of
+`Self-Billed_Format.xlsx`'s embedded images) that `desc2` is a real, currently-blank column on the
+production side, and that `Qty`/`Price`/`Amount` there are already the real numeric fields — i.e.
+this same screenshot independently reconfirmed the Phase 3 Qty/Price/Amount fix shipped in 1.0.4
+was correct, not something this change reverses.
