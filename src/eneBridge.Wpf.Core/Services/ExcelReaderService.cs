@@ -189,7 +189,7 @@ public sealed class ExcelReaderService
     }
 
     private readonly record struct StockReceivedRowFields(
-        string Ref, DateTime Date, string Code, string Name, string ItemNo, string Desc1, string Desc2, decimal Qty, decimal NAmt, decimal TAmt);
+        string Ref, DateTime Date, string Code, string Name, string ItemNo, string Desc1, string Desc2, string DeliveryOrderNo, decimal Qty, decimal NAmt, decimal TAmt);
 
     /// <summary>
     /// Shared validation for both ReadStockReceivedIcmaste and ReadStockReceivedIctrane -- every
@@ -223,6 +223,9 @@ public sealed class ExcelReaderService
 
         string desc1Value = GetString(worksheet, excelRow, StockReceivedExcelCol.Desc1);
         string desc2Value = GetString(worksheet, excelRow, StockReceivedExcelCol.Desc2);
+        // Optional column: GetString returns empty for an empty cell, and ClosedXML returns an empty
+        // cell for any position beyond the used range, so an 11-column workbook is safe here.
+        string deliveryOrderNoValue = GetString(worksheet, excelRow, StockReceivedExcelCol.DeliveryOrderNo);
 
         string qtyRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.Qty);
         if (!TryParseOptionalDecimal(qtyRaw, "Qty", excelRow, skipReasons, out var qtyOpt)) { return null; }
@@ -233,7 +236,7 @@ public sealed class ExcelReaderService
         string tAmtRaw = GetString(worksheet, excelRow, StockReceivedExcelCol.TAmt);
         if (!TryParseOptionalDecimal(tAmtRaw, "Total Amount", excelRow, skipReasons, out var tAmtOpt)) { return null; }
 
-        return new StockReceivedRowFields(refValue, date, codeValue, nameValue, itemNoValue, desc1Value, desc2Value, qtyOpt ?? 0m, nAmtOpt ?? 0m, tAmtOpt ?? 0m);
+        return new StockReceivedRowFields(refValue, date, codeValue, nameValue, itemNoValue, desc1Value, desc2Value, deliveryOrderNoValue, qtyOpt ?? 0m, nAmtOpt ?? 0m, tAmtOpt ?? 0m);
     }
 
     /// <summary>
@@ -278,6 +281,7 @@ public sealed class ExcelReaderService
             row[IcmasteSchema.VendNo] = TextTruncation.Truncate(fields.Value.Code, 8);
             row[IcmasteSchema.NAmt] = fields.Value.NAmt;
             row[IcmasteSchema.TAmt] = fields.Value.TAmt;
+            row[IcmasteSchema.HField1] = TextTruncation.Truncate(fields.Value.DeliveryOrderNo, 40);
             table.Rows.Add(row);
         }
 

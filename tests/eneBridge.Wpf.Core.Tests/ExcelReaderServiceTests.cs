@@ -413,7 +413,7 @@ public class ExcelReaderServiceTests
     private static void SetStockReceivedRow(
         IXLWorksheet worksheet, int row, string? refValue, string? dateValue, string? codeValue, string? nameValue,
         string? itemNoValue, string? desc1Value = "ITEM DESC", string? qtyValue = "1", string? nAmtValue = "100",
-        string? tAmtValue = "100", string? desc2Value = null)
+        string? tAmtValue = "100", string? desc2Value = null, string? deliveryOrderNoValue = null)
     {
         SetCell(worksheet, row, StockReceivedExcelCol.Ref, refValue);
         SetCell(worksheet, row, StockReceivedExcelCol.Date, dateValue);
@@ -425,15 +425,17 @@ public class ExcelReaderServiceTests
         SetCell(worksheet, row, StockReceivedExcelCol.Qty, qtyValue);
         SetCell(worksheet, row, StockReceivedExcelCol.NAmt, nAmtValue);
         SetCell(worksheet, row, StockReceivedExcelCol.TAmt, tAmtValue);
+        SetCell(worksheet, row, StockReceivedExcelCol.DeliveryOrderNo, deliveryOrderNoValue);
     }
 
     private static IXLWorksheet BuildStockReceivedWorksheet(
         string? refValue = "SB-000001", string? dateValue = "2026-09-01", string? codeValue = "4000T001",
         string? nameValue = "TAN KANG KAE", string? itemNoValue = "sub-con", string? desc1Value = "Sub Con Wages",
-        string? qtyValue = "1", string? nAmtValue = "1000", string? tAmtValue = "1000", string? desc2Value = null)
+        string? qtyValue = "1", string? nAmtValue = "1000", string? tAmtValue = "1000", string? desc2Value = null,
+        string? deliveryOrderNoValue = null)
     {
         var worksheet = NewWorksheet();
-        SetStockReceivedRow(worksheet, ExcelLayout.FirstDataRow, refValue, dateValue, codeValue, nameValue, itemNoValue, desc1Value, qtyValue, nAmtValue, tAmtValue, desc2Value);
+        SetStockReceivedRow(worksheet, ExcelLayout.FirstDataRow, refValue, dateValue, codeValue, nameValue, itemNoValue, desc1Value, qtyValue, nAmtValue, tAmtValue, desc2Value, deliveryOrderNoValue);
         return worksheet;
     }
 
@@ -505,6 +507,69 @@ public class ExcelReaderServiceTests
 
         Assert.Single(result.Table.Rows);
         Assert.Equal(string.Empty, result.Table.Rows[0][IctraneSchema.Desc2]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIcmaste_DeliveryOrderNoPopulated_MapsToHField1()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet(deliveryOrderNoValue: "DO1234");
+
+        var result = service.ReadStockReceivedIcmaste(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal("DO1234", result.Table.Rows[0][IcmasteSchema.HField1]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIcmaste_DeliveryOrderNoBlank_MapsToEmptyStringAndRowIsKept()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet();
+
+        var result = service.ReadStockReceivedIcmaste(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Empty(result.SkipReasons);
+        Assert.Equal(string.Empty, result.Table.Rows[0][IcmasteSchema.HField1]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIcmaste_DeliveryOrderNoLongerThan40_IsTruncated()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet(deliveryOrderNoValue: new string('D', 50));
+
+        var result = service.ReadStockReceivedIcmaste(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal(new string('D', 40), result.Table.Rows[0][IcmasteSchema.HField1]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIcmaste_ElevenColumnWorkbookWithoutDeliveryOrderColumn_StillReads()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet();
+
+        var result = service.ReadStockReceivedIcmaste(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Empty(result.SkipReasons);
+        Assert.Equal(string.Empty, result.Table.Rows[0][IcmasteSchema.HField1]);
+    }
+
+    [Fact]
+    public void ReadStockReceivedIctrane_DeliveryOrderNoPopulated_DoesNotAffectIctrane()
+    {
+        var service = new ExcelReaderService();
+        var worksheet = BuildStockReceivedWorksheet(deliveryOrderNoValue: "DO1234");
+
+        var result = service.ReadStockReceivedIctrane(worksheet);
+
+        Assert.Single(result.Table.Rows);
+        Assert.Equal("sub-con", result.Table.Rows[0][IctraneSchema.ItemNo]);
+        Assert.Equal(1000m, result.Table.Rows[0][IctraneSchema.Amount]);
     }
 
     [Fact]

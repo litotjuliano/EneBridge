@@ -54,6 +54,7 @@ public static class IcmasteSchema
     public const string VendNo = "VENDNO";
     public const string NAmt = "N_AMT";
     public const string TAmt = "T_AMT";
+    public const string HField1 = "HFIELD1";
 
     // Part of the required schema below (see BuildColumns) but never assigned a value by
     // ExcelReaderService — declared here only because BuildColumns references them by name.

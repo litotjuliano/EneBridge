@@ -32,6 +32,15 @@ public static class StockReceivedExcelCol
     public const int NAmt = 9;
     public const int TAmt = 10;
 
-    /// <summary>Minimum raw column count required (through Total Amount at index 10).</summary>
+    /// <summary>
+    /// "Delivery Order No" -- added to the template after the 11-column layout (client-provided
+    /// sample-19-10-2026.xlsx, 2026-10-19), as column L. Maps to <see cref="Models.IcmasteSchema.HField1"/>.
+    /// Deliberately OPTIONAL: <see cref="MinColumnCount"/> is not raised, so older 11-column
+    /// workbooks still validate, and a missing column or blank cell just leaves HFIELD1 blank
+    /// (never a row-skip condition).
+    /// </summary>
+    public const int DeliveryOrderNo = 11;
+
+    /// <summary>Minimum raw column count required (through Total Amount at index 10). Delivery Order No (index 11) is optional.</summary>
     public const int MinColumnCount = 11;
 }
