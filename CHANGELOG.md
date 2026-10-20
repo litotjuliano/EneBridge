@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.0.7] - 2026-10-20
+- Stock Received: the new optional "Delivery Order No" column (column L) is now written to the HFIELD1 field of icmaste.dbf (older templates without the column still work)
+
 ## [1.0.6] - 2026-09-17
 - Support the new "Item Description 2" column in the Stock Received Excel template (fixes "Qty value is not a valid number" when the template has this extra column)
 
