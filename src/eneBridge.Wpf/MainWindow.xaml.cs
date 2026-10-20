@@ -40,7 +40,7 @@ public partial class MainWindow : Window
     private static readonly HashSet<string> StockReceivedIcmastePopulatedColumns = new(StringComparer.OrdinalIgnoreCase)
     {
         "TYPE", "ENTRY", "REF", "DATE", "CODE", "NAME", "ACCNO", "USER", "POSTACCNO",
-        "CUST2", "CURRCODE", "TAXCODE", "VENDNO", "N_AMT", "T_AMT"
+        "CUST2", "CURRCODE", "TAXCODE", "VENDNO", "N_AMT", "T_AMT", "HFIELD1"
     };
 
     private static readonly HashSet<string> StockReceivedIctranePopulatedColumns = new(StringComparer.OrdinalIgnoreCase)
