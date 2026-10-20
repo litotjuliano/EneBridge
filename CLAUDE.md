@@ -403,3 +403,13 @@ Confirmed against a live EMAS `ictran.dbf` screenshot (client-provided, part of
 production side, and that `Qty`/`Price`/`Amount` there are already the real numeric fields — i.e.
 this same screenshot independently reconfirmed the Phase 3 Qty/Price/Amount fix shipped in 1.0.4
 was correct, not something this change reverses.
+
+**Stock Received template gained an optional "Delivery Order No" column.** A client-provided
+`sample-19-10-2026.xlsx` (2026-10-19) added a 12th column L, "Delivery Order No".
+`StockReceivedExcelCol.DeliveryOrderNo` (index 11) maps it to `IcmasteSchema.HField1`
+(`HFIELD1`, varchar 40, already part of the 151-column schema) in `icmaste.dbf` only; `ictrane` is
+unchanged and Invoice is untouched. Unlike Item Description 2, it is **optional**:
+`MinColumnCount` stays at 11, so older 11-column workbooks still validate, and a missing column or
+blank cell leaves `HFIELD1` blank without skipping the row. Values are truncated to 40 characters.
+`MainWindow.xaml.cs`'s `StockReceivedIcmastePopulatedColumns` includes `HFIELD1` so the preview grid
+shows it without "Show all columns".
