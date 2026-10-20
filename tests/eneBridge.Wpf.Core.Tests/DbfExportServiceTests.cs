@@ -68,6 +68,38 @@ public class DbfExportServiceTests : IDisposable
     }
 
     [Fact]
+    public void Export_StockReceivedIcmaste_DeliveryOrderNoSurvivesRoundTripInHField1()
+    {
+        var excelReader = new ExcelReaderService();
+        var dbfExporter = new DbfExportService();
+
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var worksheet = workbook.AddWorksheet("Sheet1");
+        int row = ExcelLayout.FirstDataRow;
+        worksheet.Cell(row, StockReceivedExcelCol.Ref + 1).SetValue("SB-000001");
+        worksheet.Cell(row, StockReceivedExcelCol.Date + 1).SetValue("2026-09-01");
+        worksheet.Cell(row, StockReceivedExcelCol.Code + 1).SetValue("4000T001");
+        worksheet.Cell(row, StockReceivedExcelCol.Name + 1).SetValue("TAN KANG KAE");
+        worksheet.Cell(row, StockReceivedExcelCol.ItemNo + 1).SetValue("sub-con");
+        worksheet.Cell(row, StockReceivedExcelCol.Qty + 1).SetValue("1");
+        worksheet.Cell(row, StockReceivedExcelCol.NAmt + 1).SetValue("1000");
+        worksheet.Cell(row, StockReceivedExcelCol.TAmt + 1).SetValue("1000");
+        worksheet.Cell(row, StockReceivedExcelCol.DeliveryOrderNo + 1).SetValue("DO1234");
+
+        var read = excelReader.ReadStockReceivedIcmaste(worksheet);
+        var export = dbfExporter.Export(_scratchFolder, IcmasteSchema.TableName, read.Table, IcmasteSchema.Columns);
+
+        Assert.True(export.Success, export.ErrorMessage);
+        Assert.Empty(export.RowErrors);
+        Assert.Equal(1, export.RowsWritten);
+
+        var dbf = new DbfReaderService().Read(_scratchFolder, IcmasteSchema.TableName);
+        Assert.True(dbf.Success, dbf.ErrorMessage);
+        Assert.Single(dbf.Table.Rows);
+        Assert.Equal("DO1234", dbf.Table.Rows[0][IcmasteSchema.HField1].ToString()?.Trim());
+    }
+
+    [Fact]
     public void Export_SecondRun_BacksUpPreviousFileInsteadOfAccumulating()
     {
         var excelReader = new ExcelReaderService();
